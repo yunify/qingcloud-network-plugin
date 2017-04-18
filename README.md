@@ -1,6 +1,6 @@
-# pitrix network plugin
+# network plugin for qingcloud IAAS
 
-OpenStack Neutron compatitable network plugin used in Pitrix system
+OpenStack Neutron compatitable network plugin used in Qingcloud IAAS
 
 ## Test
 ```
