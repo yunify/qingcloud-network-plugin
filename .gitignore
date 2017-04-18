@@ -1,0 +1,8 @@
+*.py[cod]
+.settings
+.project
+.pydevproject
+*~
+.ropeproject
+.idea/
+*.swp
