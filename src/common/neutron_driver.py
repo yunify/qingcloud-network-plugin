@@ -1,6 +1,37 @@
+# =========================================================================
+# Copyright 2012-present Yunify, Inc.
+# -------------------------------------------------------------------------
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this work except in compliance with the License.
+# You may obtain a copy of the License in the LICENSE file, or at:
+#
+#  http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
+
 from neutron.plugins.ml2.driver_context import NetworkContext, SubnetContext,\
                                                PortContext, PortBinding
 from neutron.callbacks.resources import ROUTER_INTERFACE
+from oslo_config import cfg
+from oslo_utils.importutils import import_class
+
+
+def get_driver(ml2_name, l3_name, config_file):
+
+    # load settings
+    cfg.CONF(["--config-file", config_file])
+
+    ml2 = import_class(ml2_name)()
+    l3 = import_class(l3_name)()
+
+    ml2.initialize()
+
+    return NeutronDriver(l3, ml2)
 
 
 class L3Context(object):
@@ -18,24 +49,24 @@ class NeutronDriver(object):
         self.l3 = l3
         self.ml2 = ml2
 
-    def create_vpc(self, router_id, l3vni, user_id):
+    def create_vpc(self, vpc_id, l3vni, user_id):
         '''
         vpc is a VRF with l3vni used by evpn
         '''
         router_context = L3Context({"tenant_id": user_id,
-                                    "id": router_id,
+                                    "id": vpc_id,
                                     "name": str(l3vni),
                                     'segment_id': l3vni,
                                     'aggregate_cidrs': ""})
 
-        self.l3.create_router(router_context, router_id)
+        self.l3.create_router(router_context, vpc_id)
 
-    def delete_vpc(self, router_id, l3vni, user_id):
+    def delete_vpc(self, vpc_id, l3vni, user_id):
 
         router_context = L3Context({"tenant_id": user_id,
-                                    "id": router_id})
+                                    "id": vpc_id})
 
-        self.l3.delete_router(router_context, router_id)
+        self.l3.delete_router(router_context, vpc_id)
 
     def create_vxnet(self, vxnet_id, vni, ip_network, gateway_ip, user_id):
         '''
@@ -90,20 +121,20 @@ class NeutronDriver(object):
         self.ml2.delete_network_precommit(network_context)
         self.ml2.delete_network_postcommit(network_context)
 
-    def join_vpc(self, router_id, vxnet_id, user_id):
+    def join_vpc(self, vpc_id, vxnet_id, user_id):
         '''
         add network to VRF
         '''
         interface_context = L3Context({'subnet_id': vxnet_id})
 
-        self.l3.add_router_interface(interface_context, router_id,
+        self.l3.add_router_interface(interface_context, vpc_id,
                                      None)
 
-    def leave_vpc(self, router_id, vxnet_id, user_id):
+    def leave_vpc(self, vpc_id, vxnet_id, user_id):
 
         interface_context = L3Context({'subnet_id': vxnet_id})
 
-        self.l3.remove_router_interface(interface_context, router_id,
+        self.l3.remove_router_interface(interface_context, vpc_id,
                                         None)
 
     def add_node(self, vxnet_id, vni, host, user_id):
