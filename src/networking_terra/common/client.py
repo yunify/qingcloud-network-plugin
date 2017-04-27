@@ -129,12 +129,12 @@ class TerraRestClient(object):
                           {"e": e, "text": response.text}, exc_info=1)
 
     def _raise_for_status(self, resp):
+        if resp.status_code == 400:
+            raise BadRequestException(msg=resp.text)
         if resp.status_code == 404:
-            raise BadRequestException()
-        if resp.status_code == 404:
-            raise NotFoundException()
+            raise NotFoundException(msg=resp.text)
         if 400 <= resp.status_code < 500:
-            raise ClientException()
+            raise ClientException(msg=resp.text)
         elif 500 <= resp.status_code < 600:
             raise ServerErrorException(msg=resp.content)
 

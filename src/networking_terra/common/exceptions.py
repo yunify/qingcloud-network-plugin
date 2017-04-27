@@ -33,11 +33,11 @@ class BadRequestException(exc.NeutronException):
 
 
 class NotFoundException(exc.NeutronException):
-    message = "%(obj)s Not Found"
+    message = "%(msg)s Not Found"
 
 
 class ServerErrorException(exc.NeutronException):
-    message = "Server Error: %(msg)"
+    message = "Server Error: %(msg)s"
 
 
 class ClientException(exc.NeutronException):

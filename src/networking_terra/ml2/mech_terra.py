@@ -30,6 +30,7 @@ from networking_terra.common.client import TerraRestClient
 from networking_terra.common.constants import supported_network_types
 from networking_terra.common.utils import log_context, get_or_create_fake_local_vlan, release_fake_local_vlan
 from networking_terra.common.utils import dict_compare
+from networking_terra.common.exceptions import NotFoundException
 import traceback
 
 LOG = logging.getLogger(__name__)
@@ -113,9 +114,13 @@ class TerraMechanismDriver(api.MechanismDriver):
         try:
             return method(*args, **kwargs)
         except Exception as e:
-            LOG.error("Failed to call method %s: %s" % (method.func_name, e.message))
-            traceback.print_exc()
-            raise ml2_exc.MechanismDriverError(method=method)
+            LOG.error("Failed to call method %s: %s"
+                      % (method.func_name, e.message))
+            # ignore notfound when delete resource
+            if not (method.func_name.startswith('delete') and
+                    isinstance(e, NotFoundException)):
+                traceback.print_exc()
+                raise ml2_exc.MechanismDriverError(method=method)
 
     @log_context(False)
     def create_network_postcommit(self, context):

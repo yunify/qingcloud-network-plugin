@@ -17,6 +17,7 @@ from oslo_log import log as logging
 from networking_terra.common.client import TerraRestClient
 from networking_terra.common.utils import log_context
 from neutron.extensions.l3 import RouterPluginBase
+from networking_terra.common.exceptions import NotFoundException
 
 LOG = logging.getLogger(__name__)
 
@@ -33,7 +34,9 @@ class TerraL3RouterPlugin(RouterPluginBase):
         try:
             method(*args, **kwargs)
         except Exception as e:
-            LOG.error("Failed to call method %s" % method.func_name)
+            LOG.error("Failed to call method %s: %s"
+                      % (method.func_name, e.message))
+            raise e
 
     @log_context(True)
     def create_router(self, context, router):
@@ -67,7 +70,12 @@ class TerraL3RouterPlugin(RouterPluginBase):
         super(TerraL3RouterPlugin, self).delete_router(context, id)
 
         LOG.debug("delete router: %s" % id)
-        self._call_client(self.client.delete_router, id)
+        try:
+            self._call_client(self.client.delete_router, id)
+        except NotFoundException:
+            # no found is OK for deletion
+            LOG.info("router: %s can not be found" % id)
+            pass
 
     @log_context(True)
     def add_router_interface(self, context, router_id, interface_info):
@@ -84,7 +92,7 @@ class TerraL3RouterPlugin(RouterPluginBase):
             LOG.error("Failed to add router interface: %s", e.message)
             #outer_interface_info = super(TerraL3RouterPlugin, self).remove_router_interface(
             #    context, router_id, interface_info)
-            #raise e
+            raise e
 
         return router_interface_info
 
@@ -94,7 +102,15 @@ class TerraL3RouterPlugin(RouterPluginBase):
             context, router_id, interface_info)
 
         subnet_id = router_interface_info['subnet_id']
-        LOG.debug("remove router interface: router_id: %s, subnet_id: %s" % (router_id, subnet_id))
-        self._call_client(self.client.del_router_interface, router_id, subnet_id)
+        LOG.debug("remove router interface: router_id: %s, subnet_id: %s"
+                  % (router_id, subnet_id))
+        try:
+            self._call_client(self.client.del_router_interface, router_id,
+                              subnet_id)
+        except NotFoundException:
+            # no found is OK for deletion
+            LOG.info("router: [%s], subnet_id: [%s] can not be found"
+                     % (id, subnet_id))
+            pass
 
         return router_interface_info

@@ -99,13 +99,14 @@ file_name = "/tmp/test.json"
 
 def get_or_create_fake_local_vlan(network_id):
 #     with lockutils.lock("vlan_mappine"):
+        vlan_mapping = {}
         if not os.path.exists(file_name):
             f = open(file_name, "w+")
-            vlan_mapping = {}
         else:
             f = open(file_name, "r+")
             s = f.read()
-            vlan_mapping = json.loads(s)
+            if s:
+                vlan_mapping = json.loads(s)
 
         if vlan_mapping.has_key(network_id):
             f.close()
@@ -129,13 +130,14 @@ def get_or_create_fake_local_vlan(network_id):
 
 def release_fake_local_vlan(network_id):
 #     with lockutils.lock("vlan_mappine"):
+        vlan_mapping = {}
         if not os.path.exists(file_name):
             f = open(file_name, "w+")
-            vlan_mapping = {}
         else:
             f = open(file_name, "r+")
             s = f.read()
-            vlan_mapping = json.loads(s)
+            if s:
+                vlan_mapping = json.loads(s)
 
         if vlan_mapping.has_key(network_id):
             f.seek(0)
