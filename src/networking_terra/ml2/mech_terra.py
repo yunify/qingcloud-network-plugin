@@ -232,10 +232,16 @@ class TerraMechanismDriver(api.MechanismDriver):
                     'vlan_domain_id': context.current['network_id'],
                     'bind_port_list': switch_ports,
                 }
+
+                native_vlan = context.current.get('native_vlan')
+                if native_vlan:
+                    args['untagged_vni'] = context._network_context.current[
+                                                'provider:segmentation_id']
+
                 LOG.debug("bind port: %s" % args)
                 port_binding = self._call_client(self.client.create_port_binding, **args)
 
-                #TODO: hack
+                # TODO: implement vlan mapping api
                 port_binding["local_vlan"] = get_or_create_fake_local_vlan(context.current["network_id"])
 
                 if self.complete_binding:

@@ -137,7 +137,11 @@ class NeutronDriver(object):
         self.l3.remove_router_interface(interface_context, vpc_id,
                                         None)
 
-    def add_node(self, vxnet_id, vni, host, user_id):
+    def add_node(self, vxnet_id, vni, host, user_id, native_vlan=True):
+        '''
+        @param native_vlan: True, for baremetal
+                            False, for hypervisor
+        '''
 
         network = {"tenant_id": user_id,
                    "id": vxnet_id,
@@ -146,10 +150,12 @@ class NeutronDriver(object):
                    'provider:network_type': 'vxlan'}
 
         port = {"tenant_id": user_id,
-                "id": vxnet_id,
+                "id": self._get_port_id(vxnet_id, host),
                 'network_id': vxnet_id,
                 'device_owner': ROUTER_INTERFACE,
-                'device_id': vxnet_id}
+                'device_id': vxnet_id,
+                'native_vlan': native_vlan}
+
         binding = PortBinding(host=host)
 
         port_context = PortContext(port, network, binding)
@@ -162,7 +168,7 @@ class NeutronDriver(object):
                    "name": vxnet_id}
 
         port = {"tenant_id": user_id,
-                "id": vxnet_id,
+                "id": self._get_port_id(vxnet_id, host),
                 'network_id': vxnet_id,
                 'device_owner': ROUTER_INTERFACE,
                 'device_id': vxnet_id}
@@ -171,3 +177,6 @@ class NeutronDriver(object):
 
         self.ml2.delete_port_precommit(port_context)
         self.ml2.delete_port_postcommit(port_context)
+
+    def _get_port_id(self, vxnet_id, host):
+        return "%s_%s" % (vxnet_id, host)

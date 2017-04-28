@@ -333,7 +333,8 @@ class TerraRestClient(object):
     #     #return {"local_vlan": get_or_create_fake_local_vlan(network_id)}
     #     return self._post(self.url + "bind_port", binding)
 
-    def create_port_binding(self, id=None, tenant_id=None, vlan_domain_id=None, bind_port_list=None):
+    def create_port_binding(self, id=None, tenant_id=None, vlan_domain_id=None,
+                            bind_port_list=None, untagged_vni=None):
         binding = {
             "id": id,
             "tenant_id": tenant_id,
@@ -347,11 +348,17 @@ class TerraRestClient(object):
             #     "port_name": "ethernet1/1"
             # }]
         }
-        return self._post(self.url + "port_vlan_domain_bindings", {"bindings": [binding]})
+        if untagged_vni is not None:
+            binding['untagged_vni'] = untagged_vni
+
+        return self._post(self.url + "port_vlan_domain_bindings",
+                          {"bindings": [binding]},
+                          timeout=30)
 
     def delete_port_binding(self, id):
         # return
-        return self._delete(self.url + "port_vlan_domain_bindings/" + id)
+        return self._delete(self.url + "port_vlan_domain_bindings/" + id,
+                            timeout=30)
 
     def get_host_topology(self):
         return self._get(self.url + "host")
