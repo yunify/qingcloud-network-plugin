@@ -56,4 +56,4 @@ class TerraTestCases(unittest.TestCase):
 
         # cisco need roughly 10s to delete l3vni
         # need 10s interval when run this test repeatly
-        driver.delete_vpc(router_id, l3vni, user_id)
+        driver.delete_vpc(router_id, user_id)
