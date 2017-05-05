@@ -55,13 +55,13 @@ class NeutronDriver(object):
         '''
         router_context = L3Context({"tenant_id": user_id,
                                     "id": vpc_id,
-                                    "name": str(l3vni),
+                                    "name": vpc_id,
                                     'segment_id': l3vni,
                                     'aggregate_cidrs': ""})
 
         self.l3.create_router(router_context, vpc_id)
 
-    def delete_vpc(self, vpc_id, l3vni, user_id):
+    def delete_vpc(self, vpc_id, user_id):
 
         router_context = L3Context({"tenant_id": user_id,
                                     "id": vpc_id})

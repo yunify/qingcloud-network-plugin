@@ -115,7 +115,7 @@ class TerraMechanismDriver(api.MechanismDriver):
             return method(*args, **kwargs)
         except Exception as e:
             LOG.error("Failed to call method %s: %s"
-                      % (method.func_name, e.message))
+                      % (method.func_name, e))
             # ignore notfound when delete resource
             if not (method.func_name.startswith('delete') and
                     isinstance(e, NotFoundException)):
