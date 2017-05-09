@@ -28,7 +28,7 @@ from neutron.plugins.ml2.common import exceptions as ml2_exc
 
 from networking_terra.common.client import TerraRestClient
 from networking_terra.common.constants import supported_network_types
-from networking_terra.common.utils import log_context, get_or_create_fake_local_vlan, release_fake_local_vlan
+from networking_terra.common.utils import log_context
 from networking_terra.common.utils import dict_compare
 from networking_terra.common.exceptions import NotFoundException
 import traceback
@@ -140,15 +140,13 @@ class TerraMechanismDriver(api.MechanismDriver):
         LOG.debug("create network: %s" % args)
         self._call_client(self.client.create_network, **args)
 
-        # create vlan domain
-        local_vlan = get_or_create_fake_local_vlan(net_id)
         args = {
             # use first segment id as vlan_domain id
             'id': net_id,
             'name': net_name,
-            'start_vlan': local_vlan,
-            'end_vlan': local_vlan,
-            'start_vxlan': context.current.get('provider:segmentation_id')}
+            'start_vxlan': context.current.get('provider:segmentation_id'),
+            'end_vxlan': context.current.get('provider:segmentation_id'),
+        }
         LOG.debug("create vlan domain: %s" % args)
         port_binding = self._call_client(self.client.create_vlan_domain, **args)
 
@@ -241,22 +239,21 @@ class TerraMechanismDriver(api.MechanismDriver):
                 LOG.debug("bind port: %s" % args)
                 port_binding = self._call_client(self.client.create_port_binding, **args)
 
-                # TODO: implement vlan mapping api
-                port_binding["local_vlan"] = get_or_create_fake_local_vlan(context.current["network_id"])
-
-                if self.complete_binding:
-                    context.set_binding(segment[api.ID],
-                                        portbindings.VIF_TYPE_OVS,
-                                        self._get_vif_details(agent, port_binding, context))
-                else:
-                    segment_attr = {
-                        'network_type': 'vlan',
-                        'physical_network': self.physical_network,
-                        'segmentation_id': port_binding['local_vlan']}
-                    new_segment = context.allocate_dynamic_segment(segment_attr)
-                    LOG.debug("Bind port: %s segment: %s to switch: %s" %
-                              (context.current['id'], new_segment, str(switch_ports)))
-                    context.continue_binding(new_segment['id'], [new_segment])
+                # following code is used for neutron binding, not used for qingcloud
+                #
+                # if self.complete_binding:
+                #     context.set_binding(segment[api.ID],
+                #                         portbindings.VIF_TYPE_OVS,
+                #                         self._get_vif_details(agent, port_binding, context))
+                # else:
+                #     segment_attr = {
+                #         'network_type': 'vlan',
+                #         'physical_network': self.physical_network,
+                #         'segmentation_id': port_binding['local_vlan']}
+                #     new_segment = context.allocate_dynamic_segment(segment_attr)
+                #     LOG.debug("Bind port: %s segment: %s to switch: %s" %
+                #               (context.current['id'], new_segment, str(switch_ports)))
+                #     context.continue_binding(new_segment['id'], [new_segment])
 
     @log_context(True)
     def create_port_postcommit(self, context):

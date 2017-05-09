@@ -300,38 +300,19 @@ class TerraRestClient(object):
         payload = {"subnet_id": subnet_id}
         return self._put(self.url + "routers/" + router_id + "/remove_router_interface", payload)
 
-    def create_vlan_domain(self, id=None, name=None, start_vlan=None,
-                           end_vlan=None, start_vxlan=None):
+    def create_vlan_domain(self, id=None, name=None, start_vxlan=None, end_vxlan=None):
         payload = {
             "domains":
                 {"id": id,
                  "name": name,
                  "vlan_map_list":
-                     [{"start_vlan": start_vlan,
-                       "end_vlan": end_vlan,
-                       "start_vxlan": start_vxlan}]
+                     [{"start_vxlan": start_vxlan,
+                       "end_vxlan": end_vxlan}]
                  }}
         return self._post(self.url + "vlan_domains", payload)
 
     def delete_vlan_domain(self, id=None):
         return self._delete(self.url + "vlan_domains/" + id)
-
-    # def create_port_binding(self, id=None, network_id=None,
-    #                         bind_port=None):
-    #     binding = {
-    #         "id": id,
-    #         "network_id": network_id,
-    #         "bind_port": bind_port
-    #         # [{
-    #         #     "device_name": "leaf-1",
-    #         #     "port_name": "ethernet1/1"
-    #         # }, {
-    #         #     "device_name": "leaf-2",
-    #         #     "port_name": "ethernet1/1"
-    #         # }]
-    #     }
-    #     #return {"local_vlan": get_or_create_fake_local_vlan(network_id)}
-    #     return self._post(self.url + "bind_port", binding)
 
     def create_port_binding(self, id=None, tenant_id=None, vlan_domain_id=None,
                             bind_port_list=None, untagged_vni=None):
