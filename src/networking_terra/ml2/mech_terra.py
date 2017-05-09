@@ -159,7 +159,6 @@ class TerraMechanismDriver(api.MechanismDriver):
     def delete_network_postcommit(self, context):
         net_id = context.current['id']
         LOG.debug("delete network: %s" % net_id)
-        release_fake_local_vlan(net_id)
         self._call_client(self.client.delete_network, net_id)
         self._call_client(self.client.delete_vlan_domain, net_id)
 
