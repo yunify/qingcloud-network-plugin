@@ -68,7 +68,8 @@ class NeutronDriver(object):
 
         self.l3.delete_router(router_context, vpc_id)
 
-    def create_vxnet(self, vxnet_id, vni, ip_network, gateway_ip, user_id):
+    def create_vxnet(self, vxnet_id, vni, ip_network, gateway_ip, user_id,
+                     network_type='vxlan'):
         '''
         vxnet is a network with only one subnet
         '''
@@ -77,7 +78,7 @@ class NeutronDriver(object):
                    "id": vxnet_id,
                    "name": vxnet_id,
                    'provider:segmentation_id': vni,
-                   'provider:network_type': 'vxlan'}
+                   'provider:network_type': network_type}
 
         network_context = NetworkContext(network)
 

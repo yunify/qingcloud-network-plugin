@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-supported_network_types = ['vxlan']
+supported_network_types = ['vxlan', 'subintf']
 AGENT_TYPE = "OVS Terra Agent"
 LOCAL_VLAN = "local_vlan"
 DEFAULT_OVSDBMON_RESPAWN = 30

@@ -130,11 +130,12 @@ class TerraMechanismDriver(api.MechanismDriver):
 
         net_id = context.current['id']
         net_name = context.current['name']
+        vlan_id = context.current['vlan_id']
         args = {
             'id': net_id,
             'tenant_id': context.current.get('tenant_id'),
             'name': net_name,
-            'network_type': 'vxlan',
+            'network_type': context.current['provider:network_type'],
             'external': context.current.get('router:external', False),
             'segment_id': context.current['provider:segmentation_id']}
         LOG.debug("create network: %s" % args)
