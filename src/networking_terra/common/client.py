@@ -77,7 +77,7 @@ class TerraRestClient(object):
                                             headers=headers, timeout=timeout)
                     LOG.debug("Got response: %s, %s" % (resp.status_code, resp.text))
                     return resp
-                except (r_exec.ConnectTimeout, r_exec.Timeout, r_exec.ReadTimeout, r_exec.ConnectionError) as e:
+                except (r_exec.Timeout, r_exec.ConnectionError) as e:
                     if timeout_retry > 1:
                         LOG.warn("Request timeout, retry: %s" % e)
                         timeout_retry -= 1
