@@ -35,7 +35,7 @@ class TerraL3RouterPlugin(RouterPluginBase):
             method(*args, **kwargs)
         except Exception as e:
             LOG.error("Failed to call method %s: %s"
-                      % (method.func_name, e.message))
+                      % (method.func_name, e))
             raise e
 
     @log_context(True)
@@ -53,12 +53,15 @@ class TerraL3RouterPlugin(RouterPluginBase):
             'ecmp_number': 3,
             'aggregate_cidrs': aggregate_cidrs
         }
+        if 'provider:bgp_peers' in router_dict:
+            kwargs['bgp_peers'] = router_dict['provider:bgp_peers']
+
         LOG.debug("create router: %s" % kwargs)
 
         try:
             self._call_client(self.client.create_router, **kwargs)
         except Exception as e:
-            LOG.error("Failed to create router in terra dc controller: %s" % e.message)
+            LOG.error("Failed to create router in terra dc controller: %s" % e)
             router_dict = super(TerraL3RouterPlugin, self).delete_router(
                 context, router_dict['id'])
             raise e
@@ -89,7 +92,7 @@ class TerraL3RouterPlugin(RouterPluginBase):
         try:
             self._call_client(self.client.add_router_interface, router_id, subnet_id)
         except Exception as e:
-            LOG.error("Failed to add router interface: %s", e.message)
+            LOG.error("Failed to add router interface: %s", e)
             #outer_interface_info = super(TerraL3RouterPlugin, self).remove_router_interface(
             #    context, router_id, interface_info)
             raise e

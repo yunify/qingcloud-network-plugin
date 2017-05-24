@@ -79,7 +79,7 @@ class TerraRestClient(object):
                     return resp
                 except (r_exec.ConnectTimeout, r_exec.Timeout, r_exec.ReadTimeout, r_exec.ConnectionError) as e:
                     if timeout_retry > 1:
-                        LOG.warn("Request timeout, retry: %s" % e.message)
+                        LOG.warn("Request timeout, retry: %s" % e)
                         timeout_retry -= 1
                         continue
                     else:
@@ -258,7 +258,8 @@ class TerraRestClient(object):
         return self._delete(self.url + "subnets/" + id)
 
     def create_router(self, id=None, tenant_id=None, name=None,
-                      segment_id=None, ecmp_number=3, aggregate_cidrs=None):
+                      segment_id=None, ecmp_number=3, aggregate_cidrs=None,
+                      bgp_peers=None):
         router = {
             "id": id,
             "name": name,
@@ -276,6 +277,8 @@ class TerraRestClient(object):
         }
         if segment_id:
             router["provider:segmentation_id"] = segment_id
+        if bgp_peers:
+            router['bgp_peers'] = bgp_peers
         payload = {"routers": [router]}
         return self._post(self.url + "routers", payload)
 
@@ -300,19 +303,25 @@ class TerraRestClient(object):
         payload = {"subnet_id": subnet_id}
         return self._put(self.url + "routers/" + router_id + "/remove_router_interface", payload)
 
-    def create_vlan_domain(self, id=None, name=None, start_vxlan=None, end_vxlan=None):
+    def create_vlan_domain(self, id=None, name=None, start_vlan=None,
+                           end_vlan=None, start_vxlan=None, end_vxlan=None):
         payload = {
             "domains":
                 {"id": id,
                  "name": name,
                  "vlan_map_list":
-                     [{"start_vxlan": start_vxlan,
+                     [{"start_vlan": start_vlan,
+                       "end_vlan": end_vlan,
+                       "start_vxlan": start_vxlan,
                        "end_vxlan": end_vxlan}]
                  }}
         return self._post(self.url + "vlan_domains", payload)
 
     def delete_vlan_domain(self, id=None):
         return self._delete(self.url + "vlan_domains/" + id)
+
+    def get_vlan_domain(self, id):
+        return self._get(self.url + "vlan_domains/" + id)
 
     def create_port_binding(self, id=None, tenant_id=None, vlan_domain_id=None,
                             bind_port_list=None, untagged_vni=None):
@@ -341,6 +350,27 @@ class TerraRestClient(object):
         return self._delete(self.url + "port_vlan_domain_bindings/" + id,
                             timeout=30)
 
-    def get_host_topology(self):
-        return self._get(self.url + "host")
+    def get_port_binding(self, id):
+        # return
+        return self._get(self.url + "port_vlan_domain_bindings/" + id,
+                            timeout=30)
 
+    def get_host_topology(self, host=None):
+        url = self.url + "host"
+        if host:
+            url += "/%s" % host
+        return self._get(url)
+
+    def delete_host(self, host):
+        url = self.url + "host/" + host
+        return self._delete(url)
+
+    def create_host(self, host, mgmt_ip, connections):
+        url = self.url + "host"
+
+        payload = {"vnetHostList": [{"name": host,
+                                     "type": "host",
+                                     "managementIpAddress": mgmt_ip,
+                                     "connections": connections}]}
+
+        return self._post(url, payload)

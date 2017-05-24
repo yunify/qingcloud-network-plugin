@@ -13,9 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import os
-
-import time
 from neutron.callbacks.resources import ROUTER_INTERFACE
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -31,31 +28,10 @@ from networking_terra.common.constants import supported_network_types
 from networking_terra.common.utils import log_context
 from networking_terra.common.utils import dict_compare
 from networking_terra.common.exceptions import NotFoundException
-import traceback
+from neutron.plugins.ml2.common.exceptions import MechanismDriverError
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('ml2_terra', 'networking_terra.common.config')
-
-
-def log_test(func):
-    def wrap(*args, **kwargs):
-        LOG.warn("%s" % func.func_name)
-        return func(*args, **kwargs)
-    return wrap
-
-def mapper():
-    def map():
-        m = {}
-        def get(key):
-            print m
-            return m.get(key, None)
-        def put(k,v):
-            m[k] = v
-            print m
-        def values():
-            return m.values()
-        return {"get":get,"put":put, "values": values}
-    return map
 
 
 class TerraMechanismDriver(api.MechanismDriver):
@@ -119,7 +95,7 @@ class TerraMechanismDriver(api.MechanismDriver):
             # ignore notfound when delete resource
             if not (method.func_name.startswith('delete') and
                     isinstance(e, NotFoundException)):
-                traceback.print_exc()
+                LOG.exception(e)
                 raise ml2_exc.MechanismDriverError(method=method)
 
     @log_context(False)
@@ -130,7 +106,6 @@ class TerraMechanismDriver(api.MechanismDriver):
 
         net_id = context.current['id']
         net_name = context.current['name']
-        vlan_id = context.current['vlan_id']
         args = {
             'id': net_id,
             'tenant_id': context.current.get('tenant_id'),
@@ -140,16 +115,6 @@ class TerraMechanismDriver(api.MechanismDriver):
             'segment_id': context.current['provider:segmentation_id']}
         LOG.debug("create network: %s" % args)
         self._call_client(self.client.create_network, **args)
-
-        args = {
-            # use first segment id as vlan_domain id
-            'id': net_id,
-            'name': net_name,
-            'start_vxlan': context.current.get('provider:segmentation_id'),
-            'end_vxlan': context.current.get('provider:segmentation_id'),
-        }
-        LOG.debug("create vlan domain: %s" % args)
-        port_binding = self._call_client(self.client.create_vlan_domain, **args)
 
     @log_context()
     def update_network_postcommit(self, context):
@@ -220,40 +185,44 @@ class TerraMechanismDriver(api.MechanismDriver):
 
                 # currently only bind to first port
                 switch_ports = self.host_mapping.get(host, None)
-                if not switch_ports or len(switch_ports)==0:
+                if not switch_ports:
                     LOG.error("Can't find host in switch mapping, can't bind port")
                     raise ml2_exc.MechanismDriverError()
+
+                vlan_id = context._network_context.current['provider:vlan_id']
+                vni = context._network_context.current[
+                                                    'provider:segmentation_id']
+
+                domain_id = self._get_domain_id(context.network.current['id'],
+                                                vlan_id)
+                args = {
+                    # use the same id for domain and binding to delete it when unbind
+                    'id': domain_id,
+                    'name': domain_id,
+                    'start_vlan': vlan_id,
+                    'end_vlan': vlan_id,
+                    'start_vxlan': vni,
+                    'end_vxlan': vni,
+                }
+                LOG.debug("create vlan domain: %s" % args)
+                self._call_client(self.client.create_vlan_domain, **args)
 
                 args = {
                     'id': context.current['id'],
                     'tenant_id': context.current.get('tenant_id'),
-                    'vlan_domain_id': context.current['network_id'],
+                    'vlan_domain_id': domain_id,
                     'bind_port_list': switch_ports,
                 }
 
                 native_vlan = context.current.get('native_vlan')
                 if native_vlan:
-                    args['untagged_vni'] = context._network_context.current[
-                                                'provider:segmentation_id']
+                    args['untagged_vni'] = vni
 
                 LOG.debug("bind port: %s" % args)
-                port_binding = self._call_client(self.client.create_port_binding, **args)
+                self._call_client(self.client.create_port_binding, **args)
 
-                # following code is used for neutron binding, not used for qingcloud
-                #
-                # if self.complete_binding:
-                #     context.set_binding(segment[api.ID],
-                #                         portbindings.VIF_TYPE_OVS,
-                #                         self._get_vif_details(agent, port_binding, context))
-                # else:
-                #     segment_attr = {
-                #         'network_type': 'vlan',
-                #         'physical_network': self.physical_network,
-                #         'segmentation_id': port_binding['local_vlan']}
-                #     new_segment = context.allocate_dynamic_segment(segment_attr)
-                #     LOG.debug("Bind port: %s segment: %s to switch: %s" %
-                #               (context.current['id'], new_segment, str(switch_ports)))
-                #     context.continue_binding(new_segment['id'], [new_segment])
+    def _get_domain_id(self, network_id, vlan_id):
+        return "%s_%s" % (network_id, vlan_id)
 
     @log_context(True)
     def create_port_postcommit(self, context):
@@ -275,8 +244,31 @@ class TerraMechanismDriver(api.MechanismDriver):
     def delete_port_postcommit(self, context):
         if context.host and context.host != '':
             if context.current['device_id']:
-                # nova delete vm or nova detach a nova-create port
+
+                binding = None
+                try:
+                    binding = self._call_client(self.client.get_port_binding,
+                                                context.current['id'])
+                except MechanismDriverError:
+                    LOG.info("port binding [%s] is not found"
+                             % context.current['id'])
+                    return
+
                 LOG.debug("delete port: %s" % context.current['id'])
-                self._call_client(self.client.delete_port_binding, context.current['id'])
+                self._call_client(self.client.delete_port_binding,
+                                  context.current['id'])
+
+                try:
+
+                    if binding:
+                        domain_id = binding["binding"]["vlan_domain_id"]
+                        LOG.debug("delete vlan domain: %s" % domain_id)
+                        self._call_client(self.client.delete_vlan_domain,
+                                          domain_id)
+                except MechanismDriverError:
+                    # due to lacking of query api, delete it directly
+                    # and ignore error if has dependence
+                    pass
+
         else:
             LOG.info("port don't have binding")

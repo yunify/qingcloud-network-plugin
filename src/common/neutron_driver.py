@@ -19,19 +19,24 @@ from neutron.plugins.ml2.driver_context import NetworkContext, SubnetContext,\
 from neutron.callbacks.resources import ROUTER_INTERFACE
 from oslo_config import cfg
 from oslo_utils.importutils import import_class
+from networking_terra.common.exceptions import ServerErrorException
+
+NETWORK_TYPE_VXLAN = 'vxlan'
+NETWORK_TYPE_SUBINTERFACE = 'subintf'
 
 
-def get_driver(ml2_name, l3_name, config_file):
+def get_driver(ml2_name, l3_name, hostdriver_name, config_file):
 
     # load settings
     cfg.CONF(["--config-file", config_file])
 
     ml2 = import_class(ml2_name)()
     l3 = import_class(l3_name)()
+    hostdriver = import_class(hostdriver_name)
 
     ml2.initialize()
 
-    return NeutronDriver(l3, ml2)
+    return NeutronDriver(l3, ml2, hostdriver)
 
 
 class L3Context(object):
@@ -42,22 +47,33 @@ class L3Context(object):
     def __getitem__(self, key):
         return self.context[key]
 
+    def __iter__(self):
+            return self.context.__iter__()
+
 
 class NeutronDriver(object):
 
-    def __init__(self, l3, ml2):
+    def __init__(self, l3, ml2, host_driver):
         self.l3 = l3
         self.ml2 = ml2
+        self.host_driver = host_driver
 
-    def create_vpc(self, vpc_id, l3vni, user_id):
+    def create_vpc(self, vpc_id, l3vni, user_id, bgp_peers=None):
         '''
         vpc is a VRF with l3vni used by evpn
         '''
-        router_context = L3Context({"tenant_id": user_id,
-                                    "id": vpc_id,
-                                    "name": vpc_id,
-                                    'segment_id': l3vni,
-                                    'aggregate_cidrs': ""})
+        router = {"tenant_id": user_id,
+                  "id": vpc_id,
+                  "name": vpc_id,
+                  'segment_id': l3vni,
+                  'aggregate_cidrs': ""}
+
+        if bgp_peers:
+            router['provider:bgp_peers'] = []
+            for bgp_peer in bgp_peers:
+                router['provider:bgp_peers'].append(bgp_peer.to_dict())
+
+        router_context = L3Context(router)
 
         self.l3.create_router(router_context, vpc_id)
 
@@ -69,7 +85,7 @@ class NeutronDriver(object):
         self.l3.delete_router(router_context, vpc_id)
 
     def create_vxnet(self, vxnet_id, vni, ip_network, gateway_ip, user_id,
-                     network_type='vxlan'):
+                     network_type=NETWORK_TYPE_VXLAN):
         '''
         vxnet is a network with only one subnet
         '''
@@ -82,7 +98,9 @@ class NeutronDriver(object):
 
         network_context = NetworkContext(network)
 
-#         subnet_id = "subnet-%s" % vxnet_id
+        self.ml2.create_network_precommit(network_context)
+        self.ml2.create_network_postcommit(network_context)
+
         subnet_id = vxnet_id
         subnet = {"tenant_id": user_id,
                   "id": subnet_id,
@@ -93,10 +111,6 @@ class NeutronDriver(object):
                   'enable_dhcp': False}
 
         subnet_context = SubnetContext(subnet, network)
-
-        self.ml2.create_network_precommit(network_context)
-        self.ml2.create_network_postcommit(network_context)
-
         self.ml2.create_subnet_precommit(subnet_context)
         self.ml2.create_subnet_postcommit(subnet_context)
 
@@ -122,11 +136,11 @@ class NeutronDriver(object):
         self.ml2.delete_network_precommit(network_context)
         self.ml2.delete_network_postcommit(network_context)
 
-    def join_vpc(self, vpc_id, vxnet_id, user_id):
+    def join_vpc(self, vpc_id, subnet_id, user_id):
         '''
         add network to VRF
         '''
-        interface_context = L3Context({'subnet_id': vxnet_id})
+        interface_context = L3Context({'subnet_id': subnet_id})
 
         self.l3.add_router_interface(interface_context, vpc_id,
                                      None)
@@ -138,7 +152,8 @@ class NeutronDriver(object):
         self.l3.remove_router_interface(interface_context, vpc_id,
                                         None)
 
-    def add_node(self, vxnet_id, vni, host, user_id, native_vlan=True):
+    def add_node(self, vxnet_id, vni, host, user_id, vlan_id,
+                 native_vlan=True):
         '''
         @param native_vlan: True, for baremetal
                             False, for hypervisor
@@ -148,7 +163,8 @@ class NeutronDriver(object):
                    "id": vxnet_id,
                    "name": vxnet_id,
                    'provider:segmentation_id': vni,
-                   'provider:network_type': 'vxlan'}
+                   'provider:network_type': NETWORK_TYPE_VXLAN,
+                   'provider:vlan_id': vlan_id}
 
         port = {"tenant_id": user_id,
                 "id": self._get_port_id(vxnet_id, host),
@@ -181,3 +197,39 @@ class NeutronDriver(object):
 
     def _get_port_id(self, vxnet_id, host):
         return "%s_%s" % (vxnet_id, host)
+
+    def create_host(self, hostname, mgmt_ip, connections):
+        return self.host_driver.create_host(hostname, mgmt_ip,
+                                            connections)
+
+    def get_host(self, hostname):
+
+        try:
+            return self.host_driver.get_host(hostname)
+        # TODO server should return NotFoundException
+        except ServerErrorException:
+            pass
+
+        return None
+
+    def delete_host(self, hostname):
+        return self.host_driver.delete_host(hostname)
+
+
+class BgpPeer(object):
+
+    def __init__(self, ip_addr, as_number, device_name,
+                 advertise_host_route=False):
+
+        self.ip_addr = ip_addr
+        self.as_number = as_number
+        self.device_name = device_name
+        self.advertise_host_route = advertise_host_route
+
+    def to_dict(self):
+        return {
+                'ip_addr': self.ip_addr,
+                'as_number': self.as_number,
+                'device_name': self.device_name,
+                'advertise_host_route': self.advertise_host_route
+                }
