@@ -1,0 +1,11 @@
+pitrix-network-plugin:
+  version: '1.0'
+  src:
+    include: []
+    exclude: []
+    lib_home: /pitrix/lib/pitrix-network-plugin
+  control:
+    template: 'build/data/template/control'
+    params:
+      depends: ''
+    

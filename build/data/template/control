@@ -1,0 +1,14 @@
+Package: ${package}
+Version: ${version}
+Architecture: amd64
+Maintainer: Yunify Developers <developer@yunify.com>
+Installed-Size: ${size}
+Pre-Depends:
+Depends: ${depends}
+Recommends:
+Suggests:
+Section: devel
+Priority: optional
+Multi-Arch: foreign
+Homepage: www.yunify.com
+Description: ${package}
