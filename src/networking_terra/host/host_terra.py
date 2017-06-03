@@ -1,6 +1,5 @@
 from oslo_log import log as logging
 from networking_terra.common.client import TerraRestClient
-from networking_terra.common.utils import log_context
 from common.host_api import HostBaseDriver
 
 LOG = logging.getLogger(__name__)

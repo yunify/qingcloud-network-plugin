@@ -32,7 +32,7 @@ def get_driver(ml2_name, l3_name, hostdriver_name, config_file):
 
     ml2 = import_class(ml2_name)()
     l3 = import_class(l3_name)()
-    hostdriver = import_class(hostdriver_name)
+    hostdriver = import_class(hostdriver_name)()
 
     ml2.initialize()
 
@@ -85,7 +85,7 @@ class NeutronDriver(object):
         self.l3.delete_router(router_context, vpc_id)
 
     def create_vxnet(self, vxnet_id, vni, ip_network, gateway_ip, user_id,
-                     network_type=NETWORK_TYPE_VXLAN):
+                     network_type=NETWORK_TYPE_VXLAN, enable_dhcp=False):
         '''
         vxnet is a network with only one subnet
         '''
@@ -108,7 +108,7 @@ class NeutronDriver(object):
                   'network_id': vxnet_id,
                   'gateway_ip': gateway_ip,
                   'cidr': ip_network,
-                  'enable_dhcp': False}
+                  'enable_dhcp': enable_dhcp}
 
         subnet_context = SubnetContext(subnet, network)
         self.ml2.create_subnet_precommit(subnet_context)
