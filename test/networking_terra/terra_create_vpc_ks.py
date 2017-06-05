@@ -28,20 +28,20 @@ class TerraTestCases(unittest.TestCase):
         cfg.CONF(["--config-file",
                   "/etc/ml2_conf_terra.ini"])
 
-        vxnet_id = "vxnet-0"
-        vpc_id = "vpc-0"
+        vxnet_id = "vxnet-ks"
+        vpc_id = "vpc-ks"
         l3vni = 65534
         l2vni = 65533
         bgp_subnet_map = {"Border-Leaf-92160.01":
                                 {"l2vni": 65531,
                                  "ip_network": "169.254.1.0/24",
-                                 "network_id": "vxnet-0_169.254.1.1",
+                                 "network_id": "vxnet-ks_169.254.1.1",
                                  "bgp_ip_addr": "169.254.1.1"
                                  },
                           "Border-Leaf-92160.02":
                                 {"l2vni": 65532,
                                  "ip_network": "169.254.2.0/24",
-                                 "network_id": "vxnet-0_169.254.2.1",
+                                 "network_id": "vxnet-ks_169.254.2.1",
                                  "bgp_ip_addr": "169.254.2.1"
                                  }}
 
@@ -83,17 +83,14 @@ class TerraTestCases(unittest.TestCase):
                             network_type='vxlan', enable_dhcp=True)
         driver.join_vpc(vpc_id, vxnet_id, user_id)
 
-#             driver.remove_node(subnet_id, switch_id, user_id)
-# #      
-#             driver.leave_vpc(vpc_id, subnet_id, user_id)
-#             driver.delete_vxnet(subnet_id, user_id)
-# # 
-#         driver.leave_vpc(vpc_id, vxnet_id, user_id)
-#         driver.delete_vxnet(vxnet_id, user_id)
+#             driver.remove_node(_network_id, switch_id, user_id)
 # 
-#         vxnet_id='vxnet-r0fsbmw'
+#             driver.leave_vpc(vpc_id, _network_id, user_id)
+#             driver.delete_vxnet(_network_id, user_id)
+# 
 #         driver.leave_vpc(vpc_id, vxnet_id, user_id)
 #         driver.delete_vxnet(vxnet_id, user_id)
+#  
 # 
 #         # cisco need roughly 10s to delete l3vni
 #         # need 10s interval when run this test repeatly
