@@ -195,17 +195,25 @@ class TerraMechanismDriver(api.MechanismDriver):
 
                 domain_id = self._get_domain_id(context.network.current['id'],
                                                 vlan_id)
-                args = {
-                    # use the same id for domain and binding to delete it when unbind
-                    'id': domain_id,
-                    'name': domain_id,
-                    'start_vlan': vlan_id,
-                    'end_vlan': vlan_id,
-                    'start_vxlan': vni,
-                    'end_vxlan': vni,
-                }
-                LOG.debug("create vlan domain: %s" % args)
-                self._call_client(self.client.create_vlan_domain, **args)
+
+                try:
+                    self._call_client(self.client.get_vlan_domain,
+                                      id=domain_id)
+                except MechanismDriverError:
+                    LOG.info("vlan binding [%s] does not exist, create"
+                             % context.current['id'])
+                    args = {
+                        # use the same id for domain and
+                        # binding to delete it when unbind
+                        'id': domain_id,
+                        'name': domain_id,
+                        'start_vlan': vlan_id,
+                        'end_vlan': vlan_id,
+                        'start_vxlan': vni,
+                        'end_vxlan': vni,
+                    }
+                    LOG.debug("create vlan domain: %s" % args)
+                    self._call_client(self.client.create_vlan_domain, **args)
 
                 args = {
                     'id': context.current['id'],
