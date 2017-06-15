@@ -12,7 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-import functools
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -20,10 +19,12 @@ import json
 import requests
 from requests import exceptions as r_exec
 
-from networking_terra.common.exceptions import RequestFailedError, AuthenticationException, InitializException, \
-    TimeoutException, ClientException, ServerErrorException, BadRequestException, NotFoundException
+from networking_terra.common.exceptions import AuthenticationException, \
+    InitializException, TimeoutException, ClientException, \
+    ServerErrorException, BadRequestException, NotFoundException
 
-import pprint
+import threading
+from contextlib import contextmanager
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group("ml2_terra", "networking_terra.common.config")
@@ -60,12 +61,12 @@ class TerraRestClient(object):
         self.token = None
         self.timeout_retry = 1
         self.token_retry = 1
+        self.lock = threading.RLock()
 
     def _process_request(self, headers, method, url, payload_json, timeout=None):
-            LOG.debug("_process_request: %(method)s %(url)s %(header)s %(body)s",
+            LOG.debug("_process_request: %(method)s %(url)s %(body)s",
                       {"method": method,
                        "url": url,
-                       "header": headers,
                        "body": payload_json})
 
             timeout_retry = self.timeout_retry + 1
@@ -138,28 +139,41 @@ class TerraRestClient(object):
         elif 500 <= resp.status_code < 600:
             raise ServerErrorException(msg=resp.content)
 
-    def _send(self, method, url, payload=None, decode=True, timeout=None):
+    def _send(self, method, url, payload=None, decode=True,
+              timeout=None):
         LOG.debug("Sending request: %(method)s %(url)s %(body)s",
                   {"method": method,
                    "url": url,
                    "body": payload})
 
-        if not self.token:
-            LOG.info("token is none, issue token")
-            self.token = self.get_token()
-
-        headers = {
-            "content-type": "application/json",
-            "Authorization": "Bear " + self.token
-        }
         payload_json = json.dumps(payload)
         token_retry = self.token_retry + 1
         while token_retry:
-            resp = self._process_request(headers, method, url, payload_json, timeout)
+
+            _token = None
+            with self._lock():
+                if not self.token:
+                    LOG.info("token is none, issue token")
+                    self.token = self.get_token()
+
+                _token = self.token
+
+            if not _token:
+                LOG.error("fail to get token")
+                raise AuthenticationException()
+
+            headers = {
+                "content-type": "application/json",
+                "Authorization": "Bear " + _token
+            }
+            resp = self._process_request(headers, method, url, payload_json,
+                                         timeout)
             if resp.status_code == requests.codes.unauthorized:
                 if token_retry > 1:
-                    LOG.error("Authentication fail, try again")
-                    self.token = self.get_token()
+                    with self._lock():
+                        LOG.error("Authentication fail, try again")
+                        if _token == self.token:
+                            self.token = None
                     token_retry -= 1
                     continue
                 else:
@@ -374,3 +388,12 @@ class TerraRestClient(object):
                                      "connections": connections}]}
 
         return self._post(url, payload)
+
+    @contextmanager
+    def _lock(self):
+        self.lock.acquire()
+        try:
+            yield
+        except Exception, e:
+            LOG.exception("yield exits with exception: %s" % e)
+        self.lock.release()

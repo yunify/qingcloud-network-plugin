@@ -14,21 +14,29 @@
 # limitations under the License.
 # =========================================================================
 
+from oslo_config import cfg
 from neutron.plugins.ml2.driver_context import NetworkContext, SubnetContext,\
                                                PortContext, PortBinding
 from neutron.callbacks.resources import ROUTER_INTERFACE
-from oslo_config import cfg
 from oslo_utils.importutils import import_class
 from networking_terra.common.exceptions import ServerErrorException
+from oslo_log import log as logging
 
 NETWORK_TYPE_VXLAN = 'vxlan'
 NETWORK_TYPE_SUBINTERFACE = 'subintf'
+LOG = logging.getLogger(__name__)
 
 
 def get_driver(ml2_name, l3_name, hostdriver_name, config_file):
 
     # load settings
     cfg.CONF(["--config-file", config_file])
+    cfg.CONF.import_group("ml2_terra", "networking_terra.common.config")
+
+    LOG.info("loaded config_file [%s]",
+             config_file)
+    LOG.info("loaded url [%s]",
+             cfg.CONF.ml2_terra.url)
 
     ml2 = import_class(ml2_name)()
     l3 = import_class(l3_name)()
