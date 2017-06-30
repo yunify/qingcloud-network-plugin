@@ -29,7 +29,7 @@ class TimeoutException(exc.NeutronException):
 
 
 class BadRequestException(exc.NeutronException):
-    message = "BadRequest"
+    message = "BadRequest: %(msg)s"
 
 
 class NotFoundException(exc.NeutronException):
@@ -39,9 +39,11 @@ class NotFoundException(exc.NeutronException):
 class ServerErrorException(exc.NeutronException):
     message = "Server Error: %(msg)s"
 
+class HTTPErrorException(exc.NeutronException):
+    message = "HTTP Error: %(msg)s"
 
 class ClientException(exc.NeutronException):
-    message = "Client Exception"
+    message = "Client Exception: %(msg)s"
 
 
 class InitializException(exc.NeutronException):
