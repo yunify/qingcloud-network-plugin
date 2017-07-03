@@ -9,6 +9,7 @@ from oslo_log import log as logging
 from common.neutron_driver import NeutronDriver
 from networking_terra.host.host_terra import TerraHostDriver
 from networking_terra.common.exceptions import ServerErrorException
+from networking_terra.common.client import TerraRestClient
 
 
 LOG = logging.getLogger(__name__)
@@ -32,8 +33,9 @@ class TerraNetTestCases(unittest.TestCase):
         ml2 = TerraMechanismDriver()
         ml2.initialize()
         hostdriver = TerraHostDriver()
+        terra_client = TerraRestClient.create_client()
 
-        return NeutronDriver(l3, ml2, hostdriver)
+        return NeutronDriver(l3, ml2, hostdriver, terra_client)
 
     def test_net(self):
 
@@ -45,9 +47,10 @@ class TerraNetTestCases(unittest.TestCase):
         user_id = 'usr-123456'
         ip_network = '192.168.0.0/24'
         gateway_ip = '192.168.0.1'
-        host = 'tr03n02'
+        host = 'compute2'
 
         driver = self.get_driver()
+
         driver.create_vpc(router_id, l3vni, user_id)
 
         driver.create_vxnet(vxnet_id, l2vni, ip_network, gateway_ip, user_id)
@@ -55,6 +58,7 @@ class TerraNetTestCases(unittest.TestCase):
         driver.join_vpc(router_id, vxnet_id, user_id)
 
         driver.add_node(vxnet_id, l2vni, host, user_id, vlan_id)
+
         driver.remove_node(vxnet_id, host, user_id)
 
         driver.leave_vpc(router_id, vxnet_id, user_id)
@@ -72,12 +76,10 @@ class TerraNetTestCases(unittest.TestCase):
         hostname = "jim_green"
         mgmt_ip = "198.18.0.2"
         connections = [{
-                         "port": "port-channel100",
-                         "switchName": "highschool01"
-                       },
-                       {
-                         "port": "port-channel100",
-                         "switchName": "highschool02"
+                         "host_name": hostname,
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel100"
                        }]
 
         driver.create_host(hostname, mgmt_ip, connections)

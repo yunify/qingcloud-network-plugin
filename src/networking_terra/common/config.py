@@ -43,6 +43,9 @@ odl_opts = [
     cfg.IntOpt('report_interval',
                default=10,
                help="report interval for topology discovery agent"),
+    cfg.StrOpt('origin_name',
+               default='qingcloud',
+               help="Origin name that terra dc controller will use."),
 ]
 
 cfg.CONF.register_opts(odl_opts, "ml2_terra")

@@ -5,6 +5,7 @@ import unittest
 from networking_terra.ml2.mech_terra import TerraMechanismDriver
 from oslo_config import cfg
 from networking_terra.l3.terra_l3 import TerraL3RouterPlugin
+from networking_terra.common.client import TerraRestClient
 from oslo_log import log as logging
 from common.neutron_driver import NeutronDriver, BgpPeer
 import netaddr
@@ -23,7 +24,6 @@ class TerraTestCases(unittest.TestCase):
         self.m.UnsetStubs()
 
     def test_vpc_0(self):
-
         # load settings
         cfg.CONF(["--config-file",
                   "/etc/ml2_conf_terra.ini"])
@@ -33,17 +33,17 @@ class TerraTestCases(unittest.TestCase):
         l3vni = 65534
         l2vni = 65533
         bgp_subnet_map = {"Border-Leaf-92160.01":
-                                {"l2vni": 65531,
-                                 "ip_network": "169.254.1.0/24",
-                                 "network_id": "vxnet-ks_169.254.1.1",
-                                 "bgp_ip_addr": "169.254.1.1"
-                                 },
+                              {"ip_network": "169.254.1.0/24",
+                               "network_id": "vxnet-ks_169.254.1.1",
+                               "bgp_ip_addr": "169.254.1.1",
+                               "interface_name": "Ethernet1/20",
+                               },
                           "Border-Leaf-92160.02":
-                                {"l2vni": 65532,
-                                 "ip_network": "169.254.2.0/24",
-                                 "network_id": "vxnet-ks_169.254.2.1",
-                                 "bgp_ip_addr": "169.254.2.1"
-                                 }}
+                              {"ip_network": "169.254.2.0/24",
+                               "network_id": "vxnet-ks_169.254.2.1",
+                               "bgp_ip_addr": "169.254.2.1",
+                               "interface_name": "Ethernet1/20",
+                               }}
 
         vlan_id = 511
         user_id = 'yunify'
@@ -56,32 +56,47 @@ class TerraTestCases(unittest.TestCase):
 
         bgp_peers = [BgpPeer("169.254.1.2", 65535, "Border-Leaf-92160.01"),
                      BgpPeer("169.254.2.2", 65535, "Border-Leaf-92160.02")]
-        driver = NeutronDriver(l3, ml2, None)
+
+        terra_client = TerraRestClient.create_client()
+        driver = NeutronDriver(l3, ml2, None, terra_client)
+
         driver.create_vpc(vpc_id, l3vni, user_id,
                           bgp_peers=bgp_peers)
 
         for bgp_peer in bgp_peers:
-            switch_id = bgp_peer.device_name
-            bgp_subnet = bgp_subnet_map[switch_id]
+            switch_name = bgp_peer.device_name
+            bgp_subnet = bgp_subnet_map[switch_name]
             _bgp_ip_addr = bgp_subnet["bgp_ip_addr"]
             _network_id = bgp_subnet["network_id"]
-            _l2vni = bgp_subnet["l2vni"]
             _ip_network = bgp_subnet["ip_network"]
+            _interface_name = bgp_subnet["interface_name"]
 
-            driver.create_vxnet(_network_id, _l2vni, _ip_network,
-                                _bgp_ip_addr, user_id,
-                                network_type='subintf')
+            driver.create_vxnet(_network_id, None, _ip_network,
+                                _bgp_ip_addr, user_id, network_type="local")
 
-            driver.join_vpc(vpc_id, _network_id, user_id)
-
-            driver.add_node(_network_id, _l2vni, switch_id,
-                            user_id,
-                            vlan_id,
-                            native_vlan=False)
+            driver.add_subintf(user_id, vpc_id=vpc_id, vxnet_id=_network_id,
+                               subnet_id=_network_id, port_id=_network_id,
+                               ip=_bgp_ip_addr, switch_name=switch_name,
+                               interface_name=_interface_name, vlan_id=vlan_id)
 
         driver.create_vxnet(vxnet_id, l2vni, ip_network, gateway_ip, user_id,
                             network_type='vxlan', enable_dhcp=True)
         driver.join_vpc(vpc_id, vxnet_id, user_id)
+
+        driver.leave_vpc(vpc_id, vxnet_id, user_id)
+
+        driver.delete_vxnet(vxnet_id, user_id)
+
+        for bgp_peer in bgp_peers:
+            switch_name = bgp_peer.device_name
+            bgp_subnet = bgp_subnet_map[switch_name]
+            _network_id = bgp_subnet["network_id"]
+
+            driver.del_subintf(vpc_id, port_id=_network_id)
+
+            driver.delete_vxnet(_network_id, user_id)
+
+        driver.delete_vpc(vpc_id, user_id)
 
 #             driver.remove_node(_network_id, switch_id, user_id)
 # 

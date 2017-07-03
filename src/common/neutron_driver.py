@@ -15,8 +15,8 @@
 # =========================================================================
 
 from oslo_config import cfg
-from neutron.plugins.ml2.driver_context import NetworkContext, SubnetContext,\
-                                               PortContext, PortBinding
+from neutron.plugins.ml2.driver_context import PluginContext, NetworkContext, SubnetContext, \
+    PortContext, PortBinding
 from neutron.callbacks.resources import ROUTER_INTERFACE
 from oslo_utils.importutils import import_class
 from networking_terra.common.exceptions import ServerErrorException
@@ -27,8 +27,7 @@ NETWORK_TYPE_SUBINTERFACE = 'subintf'
 LOG = logging.getLogger(__name__)
 
 
-def get_driver(ml2_name, l3_name, hostdriver_name, config_file):
-
+def get_driver(ml2_name, l3_name, hostdriver_name, client_name, config_file):
     # load settings
     cfg.CONF(["--config-file", config_file])
     cfg.CONF.import_group("ml2_terra", "networking_terra.common.config")
@@ -41,54 +40,62 @@ def get_driver(ml2_name, l3_name, hostdriver_name, config_file):
     ml2 = import_class(ml2_name)()
     l3 = import_class(l3_name)()
     hostdriver = import_class(hostdriver_name)()
+    terra_client = import_class(client_name)()
 
     ml2.initialize()
 
-    return NeutronDriver(l3, ml2, hostdriver)
+    return NeutronDriver(l3, ml2, hostdriver, terra_client)
 
 
 class L3Context(object):
-
     def __init__(self, attrs):
-        self.context = attrs
+        for key in attrs:
+            self.__dict__[key] = attrs[key]
+
+    def get(self, key):
+        return self.__dict__.get(key)
 
     def __getitem__(self, key):
-        return self.context[key]
+        return self.__dict__[key]
 
     def __iter__(self):
-            return self.context.__iter__()
+        return self.__dict__.__iter__()
 
 
 class NeutronDriver(object):
-
-    def __init__(self, l3, ml2, host_driver):
+    def __init__(self, l3, ml2, host_driver, terra_client):
         self.l3 = l3
         self.ml2 = ml2
         self.host_driver = host_driver
+        self.terra_client = terra_client
 
     def create_vpc(self, vpc_id, l3vni, user_id, bgp_peers=None):
         '''
         vpc is a VRF with l3vni used by evpn
         '''
-        router = {"tenant_id": user_id,
+        router = {"tenant": user_id,
+                  "tenant_name": user_id,
                   "id": vpc_id,
                   "name": vpc_id,
                   'segment_id': l3vni,
                   'aggregate_cidrs': ""}
 
-        if bgp_peers:
-            router['provider:bgp_peers'] = []
-            for bgp_peer in bgp_peers:
-                router['provider:bgp_peers'].append(bgp_peer.to_dict())
-
         router_context = L3Context(router)
 
         self.l3.create_router(router_context, vpc_id)
 
+        if bgp_peers:
+            for bgp_peer in bgp_peers:
+                self.terra_client.add_router_bgp_peer(router_id=vpc_id,
+                                                      **(bgp_peer.to_dict()))
+
     def delete_vpc(self, vpc_id, user_id):
 
-        router_context = L3Context({"tenant_id": user_id,
+        router_context = L3Context({"tenant": user_id,
                                     "id": vpc_id})
+        bgp_peers = self.terra_client.get_router_bgp_peers(vpc_id)
+        for peer in bgp_peers:
+            self.terra_client.delete_router_bgp_peer(vpc_id, peer['id'])
 
         self.l3.delete_router(router_context, vpc_id)
 
@@ -101,10 +108,13 @@ class NeutronDriver(object):
         network = {"tenant_id": user_id,
                    "id": vxnet_id,
                    "name": vxnet_id,
-                   'provider:segmentation_id': vni,
                    'provider:network_type': network_type}
+        # for subinterface case, network type is "local" and don't specify vni
+        if vni:
+            network['provider:segmentation_id'] = vni
 
-        network_context = NetworkContext(network)
+        network_context = NetworkContext(network,
+                                         plugin_context=PluginContext(user_id))
 
         self.ml2.create_network_precommit(network_context)
         self.ml2.create_network_postcommit(network_context)
@@ -118,7 +128,8 @@ class NeutronDriver(object):
                   'cidr': ip_network,
                   'enable_dhcp': enable_dhcp}
 
-        subnet_context = SubnetContext(subnet, network)
+        subnet_context = SubnetContext(subnet, network,
+                                       plugin_context=PluginContext(user_id))
         self.ml2.create_subnet_precommit(subnet_context)
         self.ml2.create_subnet_postcommit(subnet_context)
 
@@ -160,6 +171,26 @@ class NeutronDriver(object):
         self.l3.remove_router_interface(interface_context, vpc_id,
                                         None)
 
+    def add_subintf(self, user_id, vpc_id, vxnet_id, subnet_id, port_id,
+                     ip, switch_name, interface_name, vlan_id):
+        interface = self.terra_client.get_switch_interface(switch_name, interface_name)
+        args = {"name": vxnet_id + "-subif",
+                "tenant_id": user_id,
+                "original_id": port_id,
+                "network_id": vxnet_id,
+                "fixed_ips": [{"subnet_id": subnet_id, "ip_address": ip}],
+                "switch_interface_id": interface['id'],
+                "vlan_id": vlan_id}
+        self.terra_client.create_direct_port(**args)
+
+        interface_info = {"port_id": port_id}
+        self.l3.add_router_interface(L3Context(interface_info), vpc_id, interface_info)
+
+    def del_subintf(self, vpc_id, port_id):
+        interface_info = {"port_id": port_id}
+        # port will be delete when remove router interface
+        self.l3.remove_router_interface(L3Context(interface_info), vpc_id, interface_info)
+
     def add_node(self, vxnet_id, vni, host, user_id, vlan_id,
                  native_vlan=True):
         '''
@@ -183,7 +214,8 @@ class NeutronDriver(object):
 
         binding = PortBinding(host=host)
 
-        port_context = PortContext(port, network, binding)
+        port_context = PortContext(port, network, binding,
+                                   plugin_context=PluginContext(user_id))
         self.ml2.bind_port(port_context)
 
     def remove_node(self, vxnet_id, host, user_id):
@@ -225,10 +257,8 @@ class NeutronDriver(object):
 
 
 class BgpPeer(object):
-
     def __init__(self, ip_addr, as_number, device_name,
                  advertise_host_route=False):
-
         self.ip_addr = ip_addr
         self.as_number = as_number
         self.device_name = device_name
@@ -236,8 +266,8 @@ class BgpPeer(object):
 
     def to_dict(self):
         return {
-                'ip_addr': self.ip_addr,
-                'as_number': self.as_number,
-                'device_name': self.device_name,
-                'advertise_host_route': self.advertise_host_route
-                }
+            'ip_address': self.ip_addr,
+            'as_number': self.as_number,
+            'device_name': self.device_name,
+            'advertise_host_route': self.advertise_host_route
+        }

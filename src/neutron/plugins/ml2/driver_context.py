@@ -33,11 +33,19 @@ class PortBinding(object):
         self.vif_type = xargs.get('vif_type')
         self.vif_details = xargs.get('vif_details')
 
+class PluginContext():
+    def __init__(self, tenant_name):
+        self._tenant_name = tenant_name
+
+    @property
+    def tenant_name(self):
+        return self._tenant_name
 
 class NetworkContext(api.NetworkContext):
 
     def __init__(self, network,
-                 original_network=None):
+                 original_network=None, plugin_context=None):
+        self._plugin_context = plugin_context
         self._network = network
         self._original_network = original_network
 
@@ -57,10 +65,11 @@ class NetworkContext(api.NetworkContext):
 class SubnetContext(api.SubnetContext):
 
     def __init__(self, subnet, network,
-                 original_subnet=None):
+                 original_subnet=None, plugin_context=None):
         self._subnet = subnet
         self._original_subnet = original_subnet
         self._network_context = NetworkContext(network) if network else None
+        self._plugin_context = plugin_context
 
     @property
     def current(self):
@@ -77,10 +86,11 @@ class SubnetContext(api.SubnetContext):
 
 class PortContext(api.PortContext):
 
-    def __init__(self, port, network, binding):
+    def __init__(self, port, network, binding, plugin_context=None):
         self._port = port
         self._original_port = None
         self._network_context = NetworkContext(network) if network else None
+        self._plugin_context = plugin_context
 
         self._binding = copy.deepcopy(binding)
         self._binding_levels = 0

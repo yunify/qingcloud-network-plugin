@@ -17,12 +17,14 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 import json
 import requests
+import traceback
+import threading
 from requests import exceptions as r_exec
 
 from networking_terra.common.exceptions import AuthenticationException, \
     InitializException, TimeoutException, ClientException, \
-    ServerErrorException, BadRequestException, NotFoundException
-
+    ServerErrorException, BadRequestException, NotFoundException, \
+    HTTPErrorException
 import threading
 from contextlib import contextmanager
 
@@ -41,15 +43,18 @@ class TerraRestClient(object):
             raise InitializException(msg="Terra dc username must be configured")
         if not cfg.CONF.ml2_terra.password:
             raise InitializException(msg="Terra dc password must be configured")
+        if not cfg.CONF.ml2_terra.origin_name:
+            raise InitializException(msg="Terra dc origin_name must be configured")
 
         return cls(
             cfg.CONF.ml2_terra.url,
             cfg.CONF.ml2_terra.auth_url,
             cfg.CONF.ml2_terra.username,
             cfg.CONF.ml2_terra.password,
-            cfg.CONF.ml2_terra.http_timeout)
+            cfg.CONF.ml2_terra.http_timeout,
+            cfg.CONF.ml2_terra.origin_name)
 
-    def __init__(self, url, auth_url, username, password, timeout):
+    def __init__(self, url, auth_url, username, password, timeout, origin_name):
         if url.endswith("/"):
             self.url = url
         else:
@@ -58,36 +63,37 @@ class TerraRestClient(object):
         self.username = username
         self.password = password
         self.timeout = timeout
+        self.origin_name = origin_name
         self.token = None
         self.timeout_retry = 1
         self.token_retry = 1
         self.lock = threading.RLock()
 
     def _process_request(self, headers, method, url, payload_json, timeout=None):
-            LOG.debug("_process_request: %(method)s %(url)s %(body)s",
-                      {"method": method,
-                       "url": url,
-                       "body": payload_json})
+        LOG.debug("Sending request: %(method)s %(url)s %(body)s",
+                  {"method": method,
+                   "url": url,
+                   "body": payload_json})
 
-            timeout_retry = self.timeout_retry + 1
-            while timeout_retry:
-                try:
-                    if not timeout:
-                        timeout = self.timeout
-                    resp = requests.request(method, url, data=payload_json,
-                                            headers=headers, timeout=timeout)
-                    LOG.debug("Got response: %s, %s" % (resp.status_code, resp.text))
-                    return resp
-                except (r_exec.Timeout, r_exec.ConnectionError) as e:
-                    if timeout_retry > 1:
-                        LOG.warn("Request timeout, retry: %s" % e)
-                        timeout_retry -= 1
-                        continue
-                    else:
-                        LOG.error("Request timeout, retiy times: %s" % self.timeout_retry)
-                        raise TimeoutException()
-            LOG.error("Should not go here")
-            raise ClientException()
+        timeout_retry = self.timeout_retry + 1
+        while timeout_retry:
+            try:
+                if not timeout:
+                    timeout = self.timeout
+                resp = requests.request(method, url, data=payload_json,
+                                        headers=headers, timeout=timeout)
+                LOG.debug("Got response: %s, %s" % (resp.status_code, resp.text))
+                return resp
+            except (r_exec.Timeout, r_exec.ConnectionError) as e:
+                if timeout_retry > 1:
+                    LOG.warn("Request timeout, retry: %s" % e)
+                    timeout_retry -= 1
+                    continue
+                else:
+                    LOG.error("Request timeout, retiy times: %s" % self.timeout_retry)
+                    raise TimeoutException()
+        LOG.error("Should not go here")
+        raise ClientException()
 
     def get_token(self):
         headers = {"Content-type": "application/json",
@@ -114,9 +120,8 @@ class TerraRestClient(object):
                     LOG.debug("authenticate successfully")
                     return token_id
 
-        if ret.status_code == requests.codes.unauthorized:
-            LOG.error("Terra dc authentication fail")
-            raise AuthenticationException()
+        LOG.error("Terra dc authentication fail")
+        raise AuthenticationException()
 
     def _decode_rensponse(self, response):
         try:
@@ -131,21 +136,23 @@ class TerraRestClient(object):
 
     def _raise_for_status(self, resp):
         if resp.status_code == 400:
-            raise BadRequestException(msg=resp.text)
+            raise BadRequestException(msg=resp.content)
         if resp.status_code == 404:
-            raise NotFoundException(msg=resp.text)
+            raise NotFoundException(msg=resp.content)
         if 400 <= resp.status_code < 500:
-            raise ClientException(msg=resp.text)
+            raise ClientException(msg=resp.content)
         elif 500 <= resp.status_code < 600:
             raise ServerErrorException(msg=resp.content)
+        raise HTTPErrorException(msg="return code: %s" % resp.status_code)
 
-    def _send(self, method, url, payload=None, decode=True,
-              timeout=None):
-        LOG.debug("Sending request: %(method)s %(url)s %(body)s",
-                  {"method": method,
-                   "url": url,
-                   "body": payload})
+    def is_response_ok(self, resp):
+        if resp.status_code == 200 \
+                or resp.status_code == 201 \
+                or resp.status_code == 204:
+            return True
+        return False
 
+    def _send(self, method, url, payload=None, decode=True, timeout=None):
         payload_json = json.dumps(payload)
         token_retry = self.token_retry + 1
         while token_retry:
@@ -180,9 +187,9 @@ class TerraRestClient(object):
                     LOG.error("Authentication fail.")
                     raise AuthenticationException()
 
-            if resp.status_code != requests.codes.ok:
-                msg = "Request to %s Failed with code %d, %s" % \
-                      (resp.url, resp.status_code, resp.text)
+            if not self.is_response_ok(resp):
+                LOG.error("Request to %s Failed with code %d, %s" % \
+                          (resp.url, resp.status_code, resp.text))
                 self._raise_for_status(resp)
             try:
                 if decode:
@@ -199,7 +206,7 @@ class TerraRestClient(object):
                                "e": e,
                                "body": payload_json})
 
-    def _post(self, url, payload, timeout=None):
+    def _post(self, url, payload=None, timeout=None):
         return self._send("POST", url, payload, timeout=timeout)
 
     def _put(self, url, payload, timeout=None):
@@ -211,183 +218,345 @@ class TerraRestClient(object):
     def _delete(self, url, timeout=None):
         return self._send("DELETE", url, decode=False, timeout=timeout)
 
-    def create_vni_range(self, tenant_id=None, start=None, end=None):
-        payload = {
-            "tenant_uuid": tenant_id,
-            "start": start,
-            "end": end
+    def create_vni_range(self, name=None, start=None, end=None):
+        vni_pool = {
+            "name": name,
+            "vni_ranges": [
+                {
+                    "start": start,
+                    "end": end
+                }
+            ]
         }
+        payload = {"vni_pool": [vni_pool]}
         return self._post(self.url + "global_vni", payload)
 
     def delete_vni_range(self, id=None):
-        return self._delete(self.url + "global_vni/" + id)
+        return self._delete(self.url + "vni_pools/%s" % id)
 
-    def get_vni_range(self):
-        return self._get(self.url + "global_vni/" + id)
+    def get_vni_range(self, id=None):
+        return self._get(self.url + "vni_pools/%s" % id)
 
-    def create_network(self, id=None, tenant_id=None, name=None,
-                       segment_id=None, network_type="vxlan",
-                       external=False, distributed=False, dhcp_relay=None):
+    def get_vni_pools(self):
+        return self._get(self.url + "vni_pools")
+
+    def create_tenant(self, tenant_id, tenant_name=None):
+        try:
+            tenant_url = self.url + "tenants"
+            tenant = {
+                "name": tenant_name,
+                "origin": self.origin_name,
+                "original_id": tenant_id,
+                "description": "Created by %s" % self.origin_name
+            }
+            return self._post(tenant_url, tenant)
+        except Exception as e:
+            LOG.error("create tenant error: %s" % e.msg)
+            LOG.error(traceback.format_exc())
+
+    def get_or_create_tenant_by_original_id(self, tenant_id, tenant_name):
+        try:
+            return self.get_id_by_original_id("tenants", tenant_id)
+        except NotFoundException:
+            LOG.info("tenant not found, create")
+            return self.create_tenant(tenant_id, tenant_name)['id']
+
+    def get_id_by_original_id(self, resource, original_id):
+        if not original_id:
+            return None
+        url = "%s%s?origin=%s&original_id=%s" % (self.url, resource, self.origin_name, original_id)
+        ret = self._get(url)
+        if not ret or not ret[0].get("id"):
+            LOG.warn("%s %s not found" % (resource, original_id))
+            raise NotFoundException(msg="%s %s" % (resource, original_id))
+        return ret[0]["id"]
+
+    def create_network(self, name, original_id=None,
+                       tenant_id=None, tenant_name=None,
+                       segment_type="vxlan", segment_global_id=None, segment_local_id=None,
+                       router_external=False):
+        tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
+
         network = {
-            "id": id,
-            "tenant_id": tenant_id,
-            "name": name,
-            "provider:segmentation_id": segment_id,
-            "provider:network_type": network_type,
-            "distributed": distributed,
-            "router:external": external
+            'name': name,
+            "origin": self.origin_name,
+            'original_id': original_id,
+            'tenant_id': tenant_id,
+            'segment:type': segment_type,
+            "router:external": router_external
         }
-        if dhcp_relay:
-            network["dhcp_relay"] = dhcp_relay
-        payload = {"networks": [network]}
-        return self._post(self.url + "networks", payload)
+        if segment_global_id:
+            network["segment:global_id"] = segment_global_id
+        if segment_local_id:
+            network["segment_local_id"] = segment_local_id
+        return self._post(self.url + "networks", network)
 
-    def update_network(self):
-        pass
+    def update_network(self, id, name=None, original_id=None,
+                       tenant_id=None, tenant_name=None,
+                       segment_type="vxlan", segment_global_id=None, segment_local_id=None,
+                       router_external=True):
+        tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
+        network = {
+            'name': name,
+            "origin": self.origin_name,
+            'original_id': original_id,
+            'tenant_id': tenant_id,
+            'segment:type': segment_type,
+            # 'segment: global_id': segment_global_id,
+            # 'segment:local_id': segment_local_id,
+            "router:external": router_external
+        }
+        if segment_global_id:
+            network["segment:global_id"] = segment_global_id
+        if segment_local_id:
+            network["segment_local_id"] = segment_local_id
+        return self._put(self.url + "networks/%s" % id, network)
 
     def delete_network(self, id):
-        return self._delete(self.url + "networks/" + id)
+        id = self.get_id_by_original_id("networks", id)
+        return self._delete(self.url + "networks/%s" % id)
 
-    def create_subnet(self, id=None, tenant_id=None, name=None, network_id=None,
-                      gateway_ip=None, cidr=None, enable_dhcp=False):
+    def create_subnet(self, name, original_id=None,
+                      tenant_id=None, tenant_name=None, network_id=None,
+                      ip_version=None, cidr=None, gateway_ip=None, enable_dhcp=True):
+        tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
+        network_id = self.get_id_by_original_id("networks", network_id)
         subnet = {
-            "id": id,
             "name": name,
-            "network_id": network_id,
+            "origin": self.origin_name,
+            "original_id": original_id,
             "tenant_id": tenant_id,
-            "ip_version": 4,
+            "network_id": network_id,
             "enable_dhcp": enable_dhcp
         }
+        if ip_version:
+            subnet["ip_version"] = ip_version
         if gateway_ip:
             subnet["gateway_ip"] = gateway_ip
         if cidr:
             subnet["cidr"] = cidr
-        payload = {"subnets": [subnet]}
-        return self._post(self.url + "subnets", payload)
+        return self._post(self.url + "subnets", subnet)
 
-    def update_subnet(self):
-        pass
+    def update_subnet(self, id, name=None, original_id=None,
+                      tenant_id=None, tenant_name=None, network_id=None,
+                      ip_version=None, cidr=None, gateway_ip=None, enable_dhcp=True):
+        tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
+        network_id = self.get_id_by_original_id("networks", network_id)
+        subnet = {
+            "name": name,
+            "origin": self.origin_name,
+            "original_id": original_id,
+            "tenant_id": tenant_id,
+            "network_id": network_id,
+            "enable_dhcp": enable_dhcp
+        }
+        if ip_version:
+            subnet["ip_version"] = ip_version
+        if gateway_ip:
+            subnet["gateway_ip"] = gateway_ip
+        if cidr:
+            subnet["cidr"] = cidr
+        return self._put(self.url + "subnets/%s" % id, subnet)
 
     def delete_subnet(self, id):
-        return self._delete(self.url + "subnets/" + id)
+        id = self.get_id_by_original_id("subnets", id)
+        return self._delete(self.url + "subnets/%s" % id)
 
-    def create_router(self, id=None, tenant_id=None, name=None,
-                      segment_id=None, ecmp_number=3, aggregate_cidrs=None,
-                      bgp_peers=None):
+    def create_router(self, name=None, tenant_id=None,
+                      tenant_name=None, original_id=None, ports=None, l3_vni=None):
+        tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
         router = {
-            "id": id,
             "name": name,
+            "origin": self.origin_name,
+            "original_id": original_id,
             "tenant_id": tenant_id,
-            "ecmp_number": ecmp_number,
-            "aggregate_cidrs": aggregate_cidrs,
-            # "bgp_peers": [
-            #     {
-            #         "ip_addr": "100.100.100.4",
-            #         "as_number": "104",
-            #         "device_name": "n9k-4",
-            #         "advertise_host_route": False
-            #     }
-            # ],
+            "cisco:l3_vni": l3_vni
         }
-        if segment_id:
-            router["provider:segmentation_id"] = segment_id
-        if bgp_peers:
-            router['bgp_peers'] = bgp_peers
-        payload = {"routers": [router]}
-        return self._post(self.url + "routers", payload)
+        if ports:
+            router["ports"] = ports
+        return self._post(self.url + "routers", router)
 
-    def update_router(self):
-        pass
+    def update_router(self, id, name=None, original_id=None,
+                      tenant_id=None, tenant_name=None, ports=None, network_id=None,
+                      enable_snat=True, fixed_ips=None, cisco_l3_vni=0):
+        tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
+        router = {
+            "name": name,
+            "origin": self.origin_name,
+            "original_id": original_id,
+            "tenant_id": tenant_id,
+            "gateway": {
+                "network_id": network_id,
+                "enable_snat": enable_snat,
+                "fixed_ips": fixed_ips,
+            },
+            "cisco:l3_vni": cisco_l3_vni
+        }
+        if ports:
+            router["ports"] = ports
+        payload = {"router": [router]}
+        return self._put(self.url + "routers/%s" % id, payload)
 
     def delete_router(self, id):
-        return self._delete(self.url + "routers/" + id)
+        id = self.get_id_by_original_id("routers", id)
+        return self._delete(self.url + "routers/%s" % id)
+
+    def add_router_bgp_peer(self, router_id, as_number, ip_address, device_name,
+                            advertise_host_route=False):
+        router_id = self.get_id_by_original_id("routers", router_id)
+        switch = self.get_switch(device_name)
+        payload = {
+            "device_id": switch["id"],
+            "as_number": as_number,
+            "ip_address": ip_address,
+            "advertise_host_route": advertise_host_route
+        }
+        return self._post(self.url + "routers/%s/bgp_neighbors" % router_id, payload)
+
+    def get_router_bgp_peers(self, router_id):
+        router_id = self.get_id_by_original_id("routers", router_id)
+        return self._get(self.url + "routers/%s/bgp_neighbors" % router_id)
+
+    def delete_router_bgp_peer(self, router_id, peer_id):
+        router_id = self.get_id_by_original_id("routers", router_id)
+        return self._delete(self.url + "routers/%s/bgp_neighbors/%s" % (router_id, peer_id))
 
     def set_external_gateway(self, router_id, network_id, enable_snat, fixed_ips):
-        payload = {'tenant_id': 'test', 'network_id': network_id, 'enable_snat': enable_snat, 'fixed_ips': fixed_ips}
-        return self._put(self.url + "routers/" + router_id + "/external_gateway", {"external_gateway": payload})
+        external_gateway = {'network_id': network_id, 'enable_snat': enable_snat, 'fixed_ips': fixed_ips}
+        payload = {"external_gateways": [external_gateway]}
+        return self._put(self.url + "routers/%s/external_gateway" % router_id, payload)
 
     def clear_external_gateway(self, router_id):
-        return self._delete(self.url + "routers/" + router_id + "/external_gateway")
+        return self._delete(self.url + "routers/%s/external_gateway" % router_id)
 
-    def add_router_interface(self, router_id, subnet_id):
-        payload = {"subnet_id": subnet_id}
-        return self._put(self.url + "routers/" + router_id + "/add_router_interface", payload)
-
-    def del_router_interface(self, router_id, subnet_id):
-        payload = {"subnet_id": subnet_id}
-        return self._put(self.url + "routers/" + router_id + "/remove_router_interface", payload)
-
-    def create_vlan_domain(self, id=None, name=None, start_vlan=None,
-                           end_vlan=None, start_vxlan=None, end_vxlan=None):
-        payload = {
-            "domains":
-                {"id": id,
-                 "name": name,
-                 "vlan_map_list":
-                     [{"start_vlan": start_vlan,
-                       "end_vlan": end_vlan,
-                       "start_vxlan": start_vxlan,
-                       "end_vxlan": end_vxlan}]
-                 }}
-        return self._post(self.url + "vlan_domains", payload)
-
-    def delete_vlan_domain(self, id=None):
-        return self._delete(self.url + "vlan_domains/" + id)
-
-    def get_vlan_domain(self, id):
-        return self._get(self.url + "vlan_domains/" + id)
-
-    def create_port_binding(self, id=None, tenant_id=None, vlan_domain_id=None,
-                            bind_port_list=None, untagged_vni=None):
-        binding = {
-            "id": id,
-            "tenant_id": tenant_id,
-            "vlan_domain_id": vlan_domain_id,
-            "bind_port_list": bind_port_list
-            # [{
-            #     "device_name": "leaf-1",
-            #     "port_name": "ethernet1/1"
-            # }, {
-            #     "device_name": "leaf-2",
-            #     "port_name": "ethernet1/1"
-            # }]
+    def add_router_interface(self, router_id, subnet_id, port_id):
+        port_id = self.get_id_by_original_id("ports", port_id)
+        router_id = self.get_id_by_original_id("routers", router_id)
+        subnet_id = self.get_id_by_original_id("subnets", subnet_id)
+        interface = {
+            "subnet_id": subnet_id,
+            "port_id": port_id
         }
-        if untagged_vni is not None:
-            binding['untagged_vni'] = untagged_vni
+        return self._post(self.url + "routers/%s/add_interfaces" % router_id, interface)
 
-        return self._post(self.url + "port_vlan_domain_bindings",
-                          {"bindings": [binding]},
-                          timeout=30)
+    def del_router_interface(self, router_id, subnet_id, port_id=None):
+        port_id = self.get_id_by_original_id("ports", port_id)
+        router_id = self.get_id_by_original_id("routers", router_id)
+        subnet_id = self.get_id_by_original_id("subnets", subnet_id)
+        interface = {
+            "subnet_id": subnet_id,
+            "port_id": port_id
+        }
+        return self._post(self.url + "routers/%s/remove_interfaces" % router_id, interface)
 
-    def delete_port_binding(self, id):
-        # return
-        return self._delete(self.url + "port_vlan_domain_bindings/" + id,
-                            timeout=30)
+    def _get_fixed_ips(self, fixed_ips):
+        for ip in fixed_ips:
+            ip["subnet_id"] = self.get_id_by_original_id("subnets", ip["subnet_id"])
+        return fixed_ips
 
-    def get_port_binding(self, id):
-        # return
-        return self._get(self.url + "port_vlan_domain_bindings/" + id,
-                            timeout=30)
+    def create_direct_port(self, name, original_id=None,
+                           tenant_id=None, tenant_name=None, network_id=None,
+                           fixed_ips=None, switch_interface_id=None, vlan_id=None):
+        tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
+        network_id = self.get_id_by_original_id("networks", network_id)
+        port = {
+            "name": name,
+            "origin": self.origin_name,
+            "original_id": original_id,
+            "tenant_id": tenant_id,
+            "network_id": network_id,
+            "ips": self._get_fixed_ips(fixed_ips),
+            "direct_port": {
+                "switch_interface_id": switch_interface_id,
+                "vlan_id": vlan_id
+            }
+        }
+        return self._post(self.url + "ports", port)
 
-    def get_host_topology(self, host=None):
-        url = self.url + "host"
-        if host:
-            url += "/%s" % host
-        return self._get(url)
+    def create_port(self, name, original_id=None,
+                    tenant_id=None, tenant_name=None, network_id=None,
+                    fixed_ips=None):
+        tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
+        network_id = self.get_id_by_original_id("networks", network_id)
+        port = {
+            "name": name,
+            "origin": self.origin_name,
+            "original_id": original_id,
+            "tenant_id": tenant_id,
+            "network_id": network_id,
+            "ips": self._get_fixed_ips(fixed_ips),
+        }
+        return self._post(self.url + "ports", port)
 
-    def delete_host(self, host):
-        url = self.url + "host/" + host
-        return self._delete(url)
+    def update_port(self, name, original_id=None,
+                    tenant_id=None, tenant_name=None, network_id=None,
+                    subnet_id=None, ip_address=None):
+        tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
+        network_id = self.get_id_by_original_id("networks", network_id)
+        subnet_id = self.get_id_by_original_id("subnets", subnet_id)
+        port = {
+            "name": name,
+            "origin": self.origin_name,
+            "original_id": original_id,
+            "tenant_id": tenant_id,
+            "network_id": network_id,
+            "ips": [
+                {
+                    "subnet_id": subnet_id,
+                    "ip_address": ip_address
+                }
+            ]
+        }
+        return self._put(self.url + "ports", port)
 
-    def create_host(self, host, mgmt_ip, connections):
-        url = self.url + "host"
+    def delete_port(self, id):
+        id = self.get_id_by_original_id("ports", id)
+        return self._delete(self.url + "ports/%s" % id)
 
-        payload = {"vnetHostList": [{"name": host,
-                                     "type": "host",
-                                     "managementIpAddress": mgmt_ip,
-                                     "connections": connections}]}
+    def port_bind(self, port_id=None, switch_name=None, interface_name=None, vlan_native=False):
+        port_id = self.get_id_by_original_id("ports", port_id)
+        binding = {
+            "switch_name": switch_name,
+            "interface_name": interface_name,
+            "vlan_native": vlan_native
+        }
+        return self._post(self.url + "ports/%s/bind" % port_id, binding)
 
-        return self._post(url, payload)
+    def create_port_binding(self, network_id=None, switch_name=None, interface_name=None,
+                            vlan_native=False, local_vlan_id=None):
+        network_id = self.get_id_by_original_id("networks", network_id)
+        binding = {
+            "network_id": network_id,
+            "switch_name": switch_name,
+            "interface_name": interface_name,
+            "vlan_native": vlan_native
+        }
+        if local_vlan_id:
+            binding["local_vlan_id"] = local_vlan_id
+        return self._post(self.url + "port_bindings", binding)
+
+    def get_port_binding(self, network_id, switch_name, interface_name):
+        network_id = self.get_id_by_original_id("networks", network_id)
+        bindings = self._get(
+            self.url + "port_bindings?network_id=%s&switch_name=%s&interface_name=%s" %
+            (network_id, switch_name, interface_name))
+        if not bindings:
+            msg = "binding not found for network %s, switch %s, interface %s" % \
+                  (network_id, switch_name, interface_name)
+            LOG.error(msg)
+            raise NotFoundException(msg=msg)
+        return bindings[0]
+
+    def delete_port_binding(self, network_id, switch_name, interface_name):
+        binding = self.get_port_binding(network_id, switch_name, interface_name)
+        return self._delete(self.url + "port_bindings/%s" % binding['id'])
+
+    def port_unbind(self, id):
+        port_id = self.get_id_by_original_id("ports", id)
+        return self._post(self.url + "ports/%s/unbind" % port_id)
+
+    def get_host(self, id):
+        return self._get(self.url + "hosts/%s" % id)
 
     @contextmanager
     def _lock(self):
@@ -397,3 +566,56 @@ class TerraRestClient(object):
         except Exception, e:
             LOG.exception("yield exits with exception: %s" % e)
         self.lock.release()
+
+    def get_host_by_name(self, hostname):
+        hosts = self._get(self.url + "hosts?hostname=%s" % hostname)
+        if not hosts:
+            return None
+        return hosts[0]
+
+    def create_host(self, hostname, mgmt_ip):
+        host = {
+            "hostname": hostname,
+            "host_ip": mgmt_ip
+        }
+        return self._post(self.url + "hosts", host)
+
+    def delete_host(self, id):
+        return self._delete(self.url + "hosts/%s" % id)
+
+    def add_host_links(self, links):
+        body = []
+        for link in links:
+            body.append({
+                "host_name": link["host_name"],
+                "host_interface_name": link["host_interface_name"],
+                "switch_name": link["switch_name"],
+                "switch_interface_name": link["switch_interface_name"]
+            })
+        return self._post(self.url + "host_links", body)
+
+    def get_host_links_by_hostname(self, hostname):
+        mapping = self._get(self.url + "host_links?host_name=%s" % hostname)
+        return mapping
+
+    def delete_host_link(self, id):
+        return self._delete(self.url + "host_links/%s" % id)
+
+    def get_switch_interface(self, switch_name, interface_name):
+        switches = self._get(self.url + "devices?name=%s" % switch_name)
+        if switches:
+            switch = switches[0]
+            if "interfaces" in switch:
+                for intf in switch["interfaces"]:
+                    if intf.get("name") == interface_name:
+                        return intf
+        msg = "can't find interface: %s %s" % (switch_name, interface_name)
+        LOG.error(msg)
+        raise NotFoundException(msg=msg)
+
+    def get_switch(self, switch_name):
+        query_url = self.url + "devices?name=%s" % switch_name
+        switches = self._get(query_url)
+        if not switches:
+            raise NotFoundException(msg="switch %s not found" % switch_name)
+        return switches[0]
