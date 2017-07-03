@@ -1,13 +1,13 @@
 from oslo_log import log as logging
 from networking_terra.common.client import TerraRestClient
-from common.host_api import HostBaseDriver
+from common.qcext_api import QcExtBaseDriver
 
 LOG = logging.getLogger(__name__)
 
 
-class TerraHostDriver(HostBaseDriver):
+class TerraQcExtDriver(QcExtBaseDriver):
     def __init__(self):
-        LOG.info("initializing TerraHostDriver")
+        LOG.info("initializing TerraQcExtDriver")
         self.client = TerraRestClient.create_client()
 
     def _call_client(self, method, *args, **kwargs):
@@ -51,3 +51,37 @@ class TerraHostDriver(HostBaseDriver):
         _host = self._call_client(self.client.create_host,
                                   hostname=host, mgmt_ip=mgmt_ip)
         _links = self._call_client(self.client.add_host_links, links=connections)
+
+    def add_router_bgp_peer(self, vpc_id, as_number, ip_address,
+                            device_name):
+        vpc_id = self.client.get_id_by_original_id("routers", vpc_id)
+        switch = self.client.get_switch(device_name)
+        payload = {
+            "device_id": switch["id"],
+            "as_number": as_number,
+            "ip_address": ip_address,
+            "advertise_host_route": False
+        }
+        return self.client._post(self.client.url +
+                                 "routers/%s/bgp_neighbors" % vpc_id,
+                                 payload)
+
+    def delete_router_bgp_peers(self, vpc_id):
+        bgp_peers = self.client.get_router_bgp_peers(vpc_id)
+        for peer in bgp_peers:
+            self.client.delete_router_bgp_peer(vpc_id, peer['id'])
+
+    def create_direct_port(self, vxnet_id,
+                           switch_name, interface_name,
+                           ip_address, vlan_id, user_id):
+        interface = self.client.get_switch_interface(switch_name,
+                                                     interface_name)
+        args = {"name": vxnet_id + "-subif",
+                "tenant_id": user_id,
+                "original_id": vxnet_id,
+                "network_id": vxnet_id,
+                "fixed_ips": [{"subnet_id": vxnet_id,
+                               "ip_address": ip_address}],
+                "switch_interface_id": interface['id'],
+                "vlan_id": vlan_id}
+        self.client.create_direct_port(**args)

@@ -23,11 +23,11 @@ from networking_terra.common.exceptions import ServerErrorException
 from oslo_log import log as logging
 
 NETWORK_TYPE_VXLAN = 'vxlan'
-NETWORK_TYPE_SUBINTERFACE = 'subintf'
+NETWORK_TYPE_SUBINTERFACE = 'local'
 LOG = logging.getLogger(__name__)
 
 
-def get_driver(ml2_name, l3_name, hostdriver_name, client_name, config_file):
+def get_driver(ml2_name, l3_name, qcext_name, client_name, config_file):
     # load settings
     cfg.CONF(["--config-file", config_file])
     cfg.CONF.import_group("ml2_terra", "networking_terra.common.config")
@@ -39,12 +39,11 @@ def get_driver(ml2_name, l3_name, hostdriver_name, client_name, config_file):
 
     ml2 = import_class(ml2_name)()
     l3 = import_class(l3_name)()
-    hostdriver = import_class(hostdriver_name)()
-    terra_client = import_class(client_name)()
+    qcext = import_class(qcext_name)()
 
     ml2.initialize()
 
-    return NeutronDriver(l3, ml2, hostdriver, terra_client)
+    return NeutronDriver(l3, ml2, qcext)
 
 
 class L3Context(object):
@@ -61,13 +60,15 @@ class L3Context(object):
     def __iter__(self):
         return self.__dict__.__iter__()
 
+    def __str__(self):
+        return str(self.__dict__)
+
 
 class NeutronDriver(object):
-    def __init__(self, l3, ml2, host_driver, terra_client):
+    def __init__(self, l3, ml2, qcext):
         self.l3 = l3
         self.ml2 = ml2
-        self.host_driver = host_driver
-        self.terra_client = terra_client
+        self.qcext = qcext
 
     def create_vpc(self, vpc_id, l3vni, user_id, bgp_peers=None):
         '''
@@ -77,8 +78,7 @@ class NeutronDriver(object):
                   "tenant_name": user_id,
                   "id": vpc_id,
                   "name": vpc_id,
-                  'segment_id': l3vni,
-                  'aggregate_cidrs': ""}
+                  'l3_vni': l3vni}
 
         router_context = L3Context(router)
 
@@ -86,16 +86,17 @@ class NeutronDriver(object):
 
         if bgp_peers:
             for bgp_peer in bgp_peers:
-                self.terra_client.add_router_bgp_peer(router_id=vpc_id,
-                                                      **(bgp_peer.to_dict()))
+                as_number = bgp_peer.as_number
+                device_name = bgp_peer.device_name
+                ip_address = bgp_peer.ip_address
+                self.qcext.add_router_bgp_peer(vpc_id, as_number,
+                                               ip_address, device_name)
 
     def delete_vpc(self, vpc_id, user_id):
 
         router_context = L3Context({"tenant": user_id,
                                     "id": vpc_id})
-        bgp_peers = self.terra_client.get_router_bgp_peers(vpc_id)
-        for peer in bgp_peers:
-            self.terra_client.delete_router_bgp_peer(vpc_id, peer['id'])
+        self.qcext.delete_router_bgp_peers(vpc_id)
 
         self.l3.delete_router(router_context, vpc_id)
 
@@ -171,25 +172,24 @@ class NeutronDriver(object):
         self.l3.remove_router_interface(interface_context, vpc_id,
                                         None)
 
-    def add_subintf(self, user_id, vpc_id, vxnet_id, subnet_id, port_id,
-                     ip, switch_name, interface_name, vlan_id):
-        interface = self.terra_client.get_switch_interface(switch_name, interface_name)
-        args = {"name": vxnet_id + "-subif",
-                "tenant_id": user_id,
-                "original_id": port_id,
-                "network_id": vxnet_id,
-                "fixed_ips": [{"subnet_id": subnet_id, "ip_address": ip}],
-                "switch_interface_id": interface['id'],
-                "vlan_id": vlan_id}
-        self.terra_client.create_direct_port(**args)
+    def add_subintf(self, vpc_id, network_id, ip_address,
+                    switch_name, interface_name, vlan_id, user_id):
 
-        interface_info = {"port_id": port_id}
-        self.l3.add_router_interface(L3Context(interface_info), vpc_id, interface_info)
+        self.qcext.create_direct_port(network_id,
+                                      switch_name, interface_name,
+                                      ip_address, vlan_id, user_id)
+        port_id = network_id
+        interface_info = {"port_id": port_id,
+                          "subnet_id": network_id}
+        self.l3.add_router_interface(L3Context(interface_info), vpc_id,
+                                     interface_info)
 
-    def del_subintf(self, vpc_id, port_id):
-        interface_info = {"port_id": port_id}
+    def delete_subintf(self, vpc_id, network_id):
+        interface_info = {"port_id": network_id,
+                          "subnet_id": network_id}
         # port will be delete when remove router interface
-        self.l3.remove_router_interface(L3Context(interface_info), vpc_id, interface_info)
+        self.l3.remove_router_interface(L3Context(interface_info), vpc_id,
+                                        interface_info)
 
     def add_node(self, vxnet_id, vni, host, user_id, vlan_id,
                  native_vlan=True):
@@ -239,13 +239,13 @@ class NeutronDriver(object):
         return "%s_%s" % (vxnet_id, host)
 
     def create_host(self, hostname, mgmt_ip, connections):
-        return self.host_driver.create_host(hostname, mgmt_ip,
+        return self.qcext.create_host(hostname, mgmt_ip,
                                             connections)
 
     def get_host(self, hostname):
 
         try:
-            return self.host_driver.get_host(hostname)
+            return self.qcext.get_host(hostname)
         # TODO server should return NotFoundException
         except ServerErrorException:
             pass
@@ -253,20 +253,20 @@ class NeutronDriver(object):
         return None
 
     def delete_host(self, hostname):
-        return self.host_driver.delete_host(hostname)
+        return self.qcext.delete_host(hostname)
 
 
 class BgpPeer(object):
-    def __init__(self, ip_addr, as_number, device_name,
+    def __init__(self, ip_address, as_number, device_name,
                  advertise_host_route=False):
-        self.ip_addr = ip_addr
+        self.ip_address = ip_address
         self.as_number = as_number
         self.device_name = device_name
         self.advertise_host_route = advertise_host_route
 
     def to_dict(self):
         return {
-            'ip_address': self.ip_addr,
+            'ip_address': self.ip_address,
             'as_number': self.as_number,
             'device_name': self.device_name,
             'advertise_host_route': self.advertise_host_route

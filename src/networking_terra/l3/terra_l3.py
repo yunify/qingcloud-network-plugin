@@ -49,7 +49,8 @@ class TerraL3RouterPlugin(RouterPluginBase):
             'name': router_dict['name'],
             'tenant_id': context.tenant,
             'tenant_name': context.tenant_name,
-            'original_id': router_dict['id']
+            'original_id': router_dict['id'],
+            'l3_vni': router_dict['l3_vni'],
         }
         LOG.debug("create router: %s" % kwargs)
 
@@ -97,7 +98,6 @@ class TerraL3RouterPlugin(RouterPluginBase):
     def remove_router_interface(self, context, router_id, interface_info):
         router_interface_info = super(TerraL3RouterPlugin, self).remove_router_interface(
             context, router_id, interface_info)
-
         subnet_id = router_interface_info.get('subnet_id')
         port_id = router_interface_info.get('port_id')
         LOG.debug("remove router interface: router_id: %s, subnet_id: %s" %

@@ -87,6 +87,9 @@ class TerraMechanismDriver(api.MechanismDriver):
             # 'segment_local_id': 0,
             "router_external": False
         }
+        vni = context.current.get('provider:segmentation_id')
+        if vni:
+            args['segment_global_id'] = vni
         LOG.debug("create network: %s" % args)
         self._call_client(self.client.create_network, **args)
 

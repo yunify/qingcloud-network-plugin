@@ -25,7 +25,6 @@ from networking_terra.common.exceptions import AuthenticationException, \
     InitializException, TimeoutException, ClientException, \
     ServerErrorException, BadRequestException, NotFoundException, \
     HTTPErrorException
-import threading
 from contextlib import contextmanager
 
 LOG = logging.getLogger(__name__)

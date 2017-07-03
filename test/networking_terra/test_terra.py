@@ -7,9 +7,7 @@ from oslo_config import cfg
 from networking_terra.l3.terra_l3 import TerraL3RouterPlugin
 from oslo_log import log as logging
 from common.neutron_driver import NeutronDriver
-from networking_terra.host.host_terra import TerraHostDriver
-from networking_terra.common.exceptions import ServerErrorException
-from networking_terra.common.client import TerraRestClient
+from networking_terra.qcext.qcext_terra import TerraQcExtDriver
 
 
 LOG = logging.getLogger(__name__)
@@ -32,10 +30,9 @@ class TerraNetTestCases(unittest.TestCase):
         l3 = TerraL3RouterPlugin()
         ml2 = TerraMechanismDriver()
         ml2.initialize()
-        hostdriver = TerraHostDriver()
-        terra_client = TerraRestClient.create_client()
+        qcext = TerraQcExtDriver()
 
-        return NeutronDriver(l3, ml2, hostdriver, terra_client)
+        return NeutronDriver(l3, ml2, qcext)
 
     def test_net(self):
 
