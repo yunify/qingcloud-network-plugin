@@ -46,6 +46,12 @@ odl_opts = [
     cfg.StrOpt('origin_name',
                default='qingcloud',
                help="Origin name that terra dc controller will use."),
+    cfg.StrOpt('l2_vni_pool_name',
+               default='l2',
+               help="pool name that terra dc controller will allocate l2 vni"),
+    cfg.StrOpt('l3_vni_pool_name',
+               default='l3',
+               help="pool name that terra dc controller will allocate l3 vni"),
 ]
 
 cfg.CONF.register_opts(odl_opts, "ml2_terra")

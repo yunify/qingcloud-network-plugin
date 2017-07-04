@@ -17,9 +17,11 @@ from networking_terra.common.client import TerraRestClient
 from networking_terra.common.exceptions import NotFoundException
 from networking_terra.common.utils import log_context
 from neutron.extensions.l3 import RouterPluginBase
+from oslo_config import cfg
 import traceback
 
 LOG = logging.getLogger(__name__)
+cfg.CONF.import_group("ml2_terra", "networking_terra.common.config")
 
 
 class TerraL3RouterPlugin(RouterPluginBase):
@@ -28,6 +30,7 @@ class TerraL3RouterPlugin(RouterPluginBase):
         LOG.info("initializing Terra L3 driver")
         super(TerraL3RouterPlugin, self).__init__()
         self.client = TerraRestClient.create_client()
+        self.l3_vni_pool = cfg.CONF.ml2_terra.l3_vni_pool_name
         LOG.info("Terra L3 driver initialized")
 
     def _call_client(self, method, *args, **kwargs):
@@ -51,6 +54,7 @@ class TerraL3RouterPlugin(RouterPluginBase):
             'tenant_name': context.tenant_name,
             'original_id': router_dict['id'],
             'l3_vni': router_dict['l3_vni'],
+            'vni_pool_name': self.l3_vni_pool
         }
         LOG.debug("create router: %s" % kwargs)
 

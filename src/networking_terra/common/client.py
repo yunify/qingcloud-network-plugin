@@ -273,7 +273,7 @@ class TerraRestClient(object):
     def create_network(self, name, original_id=None,
                        tenant_id=None, tenant_name=None,
                        segment_type="vxlan", segment_global_id=None, segment_local_id=None,
-                       router_external=False):
+                       router_external=False, vni_pool_name=None):
         tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
 
         network = {
@@ -282,7 +282,8 @@ class TerraRestClient(object):
             'original_id': original_id,
             'tenant_id': tenant_id,
             'segment:type': segment_type,
-            "router:external": router_external
+            "router:external": router_external,
+            "segment:global_id_pool_name": vni_pool_name
         }
         if segment_global_id:
             network["segment:global_id"] = segment_global_id
@@ -362,14 +363,16 @@ class TerraRestClient(object):
         return self._delete(self.url + "subnets/%s" % id)
 
     def create_router(self, name=None, tenant_id=None,
-                      tenant_name=None, original_id=None, ports=None, l3_vni=None):
+                      tenant_name=None, original_id=None, ports=None, l3_vni=None,
+                      vni_pool_name=None):
         tenant_id = self.get_or_create_tenant_by_original_id(tenant_id, tenant_name)
         router = {
             "name": name,
             "origin": self.origin_name,
             "original_id": original_id,
             "tenant_id": tenant_id,
-            "cisco:l3_vni": l3_vni
+            "cisco:l3_vni": l3_vni,
+            "cisco:l3_vni_pool_name": vni_pool_name
         }
         if ports:
             router["ports"] = ports
