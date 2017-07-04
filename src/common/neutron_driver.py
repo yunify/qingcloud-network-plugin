@@ -15,8 +15,8 @@
 # =========================================================================
 
 from oslo_config import cfg
-from neutron.plugins.ml2.driver_context import PluginContext, NetworkContext, SubnetContext, \
-    PortContext, PortBinding
+from neutron.plugins.ml2.driver_context import PluginContext, NetworkContext, \
+    SubnetContext, PortContext, PortBinding
 from neutron.callbacks.resources import ROUTER_INTERFACE
 from oslo_utils.importutils import import_class
 from networking_terra.common.exceptions import ServerErrorException
@@ -27,7 +27,7 @@ NETWORK_TYPE_SUBINTERFACE = 'local'
 LOG = logging.getLogger(__name__)
 
 
-def get_driver(ml2_name, l3_name, qcext_name, client_name, config_file):
+def get_driver(ml2_name, l3_name, qcext_name, config_file):
     # load settings
     cfg.CONF(["--config-file", config_file])
     cfg.CONF.import_group("ml2_terra", "networking_terra.common.config")
