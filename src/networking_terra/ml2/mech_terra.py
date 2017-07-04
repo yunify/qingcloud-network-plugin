@@ -44,6 +44,7 @@ class TerraMechanismDriver(api.MechanismDriver):
         self.physical_network = cfg.CONF.ml2_terra.physical_network
         self.complete_binding = cfg.CONF.ml2_terra.complete_binding
         self.binding_level = cfg.CONF.ml2_terra.binding_level
+        self.l2_vni_pool = cfg.CONF.ml2_terra.l2_vni_pool_name
 
         LOG.info("TerraMechanismDriver initialized")
 
@@ -83,8 +84,7 @@ class TerraMechanismDriver(api.MechanismDriver):
             'tenant_id': context.current['tenant_id'],
             'tenant_name': context._plugin_context.tenant_name,
             'segment_type': 'vxlan',
-            # 'segment_global_id': 0,
-            # 'segment_local_id': 0,
+            'vni_pool_name': self.l2_vni_pool,
             "router_external": False
         }
         vni = context.current.get('provider:segmentation_id')
