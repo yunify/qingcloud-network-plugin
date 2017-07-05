@@ -184,6 +184,8 @@ class TerraMechanismDriver(api.MechanismDriver):
                 'interface_name': interface_name,
                 'vlan_native': context.current.get('native_vlan')
             }
+            if 'provider:vlan_id' in network:
+                arg['local_vlan_id'] = network['provider:vlan_id']
             self._call_client(self.client.create_port_binding, **arg)
 
 
