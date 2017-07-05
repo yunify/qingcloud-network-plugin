@@ -23,6 +23,19 @@ class TerraTestCases(unittest.TestCase):
     def tearDown(self):
         self.m.UnsetStubs()
 
+
+    def get_driver(self):
+
+        cfg.CONF(["--config-file",
+                  "/etc/ml2_conf_terra.ini"])
+
+        l3 = TerraL3RouterPlugin()
+        ml2 = TerraMechanismDriver()
+        ml2.initialize()
+        qcext = TerraQcExtDriver()
+
+        return NeutronDriver(l3, ml2, qcext)
+
     def test_vpc_0(self):
         # load settings
         cfg.CONF(["--config-file",
@@ -30,10 +43,8 @@ class TerraTestCases(unittest.TestCase):
 
         vxnet_id = "vxnet-ks"
         vpc_id = "vpc-ks"
-#         l3vni = 65534
-#         l2vni = 65533
-        l3vni = 11101
-        l2vni = 10100
+        l3vni = 65534
+        l2vni = 65533
 
         bgp_subnet_map = {"Border-Leaf-92160.01":
                               {"ip_network": "169.254.1.0/24",
@@ -53,15 +64,27 @@ class TerraTestCases(unittest.TestCase):
         ip_network = "172.31.21.0/24"
         gateway_ip = "172.31.21.1"
 
-        l3 = TerraL3RouterPlugin()
-        ml2 = TerraMechanismDriver()
-        ml2.initialize()
-        qcext = TerraQcExtDriver()
-
         bgp_peers = [BgpPeer("169.254.1.2", 65535, "Border-Leaf-92160.01"),
                      BgpPeer("169.254.2.2", 65535, "Border-Leaf-92160.02")]
 
-        driver = NeutronDriver(l3, ml2, qcext)
+        driver = self.get_driver()
+# 
+# 
+#         driver.leave_vpc(vpc_id, vxnet_id, user_id)
+# 
+#         driver.delete_vxnet(vxnet_id, user_id)
+# 
+#         for bgp_peer in bgp_peers:
+#             switch_name = bgp_peer.device_name
+#             bgp_subnet = bgp_subnet_map[switch_name]
+#             _network_id = bgp_subnet["network_id"]
+# 
+#             driver.delete_subintf(vpc_id, _network_id)
+# 
+#             driver.delete_vxnet(_network_id, user_id)
+# 
+#         driver.delete_vpc(vpc_id, user_id)
+
 
         driver.create_vpc(vpc_id, l3vni, user_id,
                           bgp_peers=bgp_peers)
@@ -87,17 +110,76 @@ class TerraTestCases(unittest.TestCase):
                             network_type='vxlan', enable_dhcp=True)
         driver.join_vpc(vpc_id, vxnet_id, user_id)
 
-        driver.leave_vpc(vpc_id, vxnet_id, user_id)
 
-        driver.delete_vxnet(vxnet_id, user_id)
+    def test_host(self):
 
-        for bgp_peer in bgp_peers:
-            switch_name = bgp_peer.device_name
-            bgp_subnet = bgp_subnet_map[switch_name]
-            _network_id = bgp_subnet["network_id"]
+        connections = [{
+                         "host_name": "tr02n16",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel105"
+                       },
+                       {
+                         "host_name": "tr03n01",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel104"
+                       },
+                       {
+                         "host_name": "tr03n30",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel103"
+                       },
+                       {
+                         "host_name": "tr02n17",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel106"
+                       },
+                       {
+                         "host_name": "tr02n30",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel110"
+                       },
+                       {
+                         "host_name": "tr02n29",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel109"
+                       },
+                       {
+                         "host_name": "tr02n54",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel111"
+                       },
+                       {
+                         "host_name": "tr02n24",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel107"
+                       },
+                       {
+                         "host_name": "tr02n25",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel108"
+                       }]
 
-            driver.delete_subintf(vpc_id, _network_id)
+        for conn in connections:
+            self.add_host(conn)
 
-            driver.delete_vxnet(_network_id, user_id)
+    def add_host(self, conn):
 
-        driver.delete_vpc(vpc_id, user_id)
+        hostname = conn['host_name']
+        connections = [conn]
+
+        driver = self.get_driver()
+        driver.create_host(hostname, "", connections)
+
+        ret = driver.get_host(hostname)
+        self.assertEqual(ret["hostname"], hostname)
+        self.assertEqual(ret["mgmt_ip"], "")
+        self.assertEqual(ret["connections"], connections)

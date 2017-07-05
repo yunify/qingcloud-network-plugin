@@ -227,6 +227,13 @@ class TerraMechanismDriver(api.MechanismDriver):
             LOG.debug("don't delete router interface here")
             return
         if context.host and context.current['device_id']:
-            switch_name, switch_interface_name = self.get_host_switch_connection(context.host)
-            network_id = context.network.current['id']
-            self.client.delete_port_binding(network_id, switch_name, switch_interface_name)
+            try:
+                switch_name, switch_interface_name = \
+                    self.get_host_switch_connection(context.host)
+                network_id = context.network.current['id']
+                self.client.delete_port_binding(network_id, switch_name,
+                                                switch_interface_name)
+            except NotFoundException:
+                LOG.info("port binding not found for host [%s] in net [%s]"
+                         % (context.host, network_id))
+                return
