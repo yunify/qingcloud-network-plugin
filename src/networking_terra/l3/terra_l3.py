@@ -88,13 +88,8 @@ class TerraL3RouterPlugin(RouterPluginBase):
 
         LOG.debug("add router interface: router_id: %s, subnet_id: %s, port_id: %s"
                   % (router_id, subnet_id, port_id))
-        try:
-            self._call_client(self.client.add_router_interface,
-                              router_id, subnet_id, port_id)
-        except Exception as e:
-            LOG.error("Failed to add router interface: %s", e.msg)
-            # router_interface_info = super(TerraL3RouterPlugin, self).remove_router_interface(
-            #     context, router_id, interface_info)
+        self._call_client(self.client.add_router_interface,
+                          router_id, subnet_id, port_id)
 
         return router_interface_info
 
