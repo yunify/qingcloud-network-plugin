@@ -156,12 +156,6 @@ class TerraTestCases(unittest.TestCase):
                          "switch_interface_name": "port-channel121"
                        },
                        {
-                         "host_name": "tr02n24",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel117"
-                       },
-                       {
                          "host_name": "tr02n25",
                          "host_interface_name": "bond0",
                          "switch_name": "vpc2",
