@@ -26,9 +26,11 @@ from networking_terra.common.client import TerraRestClient
 from networking_terra.common.constants import *
 from networking_terra.common.utils import log_context
 from networking_terra.common.utils import dict_compare
-from networking_terra.common.exceptions import NotFoundException
+from networking_terra.common.exceptions import NotFoundException,\
+    BadRequestException
 from neutron.plugins.ml2.common.exceptions import MechanismDriverError
 import traceback
+from time import sleep
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('ml2_terra', 'networking_terra.common.config')
@@ -186,8 +188,13 @@ class TerraMechanismDriver(api.MechanismDriver):
             }
             if 'provider:vlan_id' in network:
                 arg['local_vlan_id'] = network['provider:vlan_id']
-            self._call_client(self.client.create_port_binding, **arg)
-
+            try:
+                self._call_client(self.client.create_port_binding, **arg)
+            except BadRequestException:
+                # failed in vpc consistent checking to avoid error from
+                # cisco. Try again later
+                sleep(60)
+                self._call_client(self.client.create_port_binding, **arg)
 
     @log_context(True)
     def create_port_postcommit(self, context):
@@ -231,8 +238,15 @@ class TerraMechanismDriver(api.MechanismDriver):
                 switch_name, switch_interface_name = \
                     self.get_host_switch_connection(context.host)
                 network_id = context.network.current['id']
-                self.client.delete_port_binding(network_id, switch_name,
-                                                switch_interface_name)
+                try:
+                    self.client.delete_port_binding(network_id, switch_name,
+                                                    switch_interface_name)
+                except BadRequestException:
+                    # failed in vpc consistent checking to avoid error from
+                    # cisco. Try again later
+                    sleep(60)
+                    self.client.delete_port_binding(network_id, switch_name,
+                                                    switch_interface_name)
             except NotFoundException:
                 LOG.info("port binding not found for host [%s] in net [%s]"
                          % (context.host, network_id))

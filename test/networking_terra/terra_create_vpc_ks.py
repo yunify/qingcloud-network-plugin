@@ -164,8 +164,26 @@ class TerraTestCases(unittest.TestCase):
                        {
                          "host_name": "tr02n25",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc1",
-                         "switch_interface_name": "port-channel108"
+                         "switch_name": "vpc2",
+                         "switch_interface_name": "port-channel113"
+                       },
+                       {
+                         "host_name": "tr02n32",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc2",
+                         "switch_interface_name": "port-channel114"
+                       },
+                       {
+                         "host_name": "tr02n33",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc2",
+                         "switch_interface_name": "port-channel115"
+                       },
+                       {
+                         "host_name": "tr02n34",
+                         "host_interface_name": "bond0",
+                         "switch_name": "vpc2",
+                         "switch_interface_name": "port-channel116"
                        }]
 
         for conn in connections:
