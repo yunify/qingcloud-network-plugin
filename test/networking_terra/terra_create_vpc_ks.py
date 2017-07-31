@@ -116,50 +116,50 @@ class TerraTestCases(unittest.TestCase):
         connections = [{
                          "host_name": "tr02n16",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc1",
+                         "switch_name": "vpc2",
                          "switch_interface_name": "port-channel105"
                        },
                        {
                          "host_name": "tr03n01",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc1",
+                         "switch_name": "vpc2",
                          "switch_interface_name": "port-channel104"
                        },
                        {
                          "host_name": "tr03n30",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc1",
+                         "switch_name": "vpc2",
                          "switch_interface_name": "port-channel103"
                        },
                        {
                          "host_name": "tr02n17",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc1",
+                         "switch_name": "vpc2",
                          "switch_interface_name": "port-channel106"
                        },
                        {
                          "host_name": "tr02n30",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc1",
-                         "switch_interface_name": "port-channel110"
+                         "switch_name": "vpc2",
+                         "switch_interface_name": "port-channel120"
                        },
                        {
                          "host_name": "tr02n29",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc1",
-                         "switch_interface_name": "port-channel109"
+                         "switch_name": "vpc2",
+                         "switch_interface_name": "port-channel119"
                        },
                        {
                          "host_name": "tr02n54",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc1",
-                         "switch_interface_name": "port-channel111"
+                         "switch_name": "vpc2",
+                         "switch_interface_name": "port-channel121"
                        },
                        {
                          "host_name": "tr02n24",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc1",
-                         "switch_interface_name": "port-channel107"
+                         "switch_name": "vpc2",
+                         "switch_interface_name": "port-channel117"
                        },
                        {
                          "host_name": "tr02n25",
