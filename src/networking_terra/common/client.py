@@ -538,10 +538,15 @@ class TerraRestClient(object):
         return self._post(self.url + "port_bindings", binding)
 
     def get_port_binding(self, network_id, switch_name, interface_name):
-        network_id = self.get_id_by_original_id("networks", network_id)
-        bindings = self._get(
-            self.url + "port_bindings?network_id=%s&switch_name=%s&interface_name=%s" %
-            (network_id, switch_name, interface_name))
+        url = self.url + "port_bindings?switch_name=%s&interface_name=%s" % \
+                (switch_name, interface_name)
+
+        if network_id:
+            network_id = self.get_id_by_original_id("networks", network_id)
+            url += "&network_id=%s" % network_id
+
+        bindings = self._get(url)
+
         if not bindings:
             msg = "binding not found for network %s, switch %s, interface %s" % \
                   (network_id, switch_name, interface_name)

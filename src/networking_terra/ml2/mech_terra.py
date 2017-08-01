@@ -180,14 +180,38 @@ class TerraMechanismDriver(api.MechanismDriver):
                 continue
             host = context.host
             switch_name, interface_name = self.get_host_switch_connection(host)
+            vlan_native = context.current.get('native_vlan')
             arg = {
                 'network_id': network['id'],
                 'switch_name': switch_name,
                 'interface_name': interface_name,
-                'vlan_native': context.current.get('native_vlan')
+                'vlan_native': vlan_native
             }
             if 'provider:vlan_id' in network:
                 arg['local_vlan_id'] = network['provider:vlan_id']
+
+            if vlan_native:
+                # the port can not bind to different vlan in this mode
+                try:
+                    binding = self.client.get_port_binding(None, switch_name,
+                                                           interface_name)
+                    network_id = self.client.get_id_by_original_id(
+                                                            "networks",
+                                                            network['id'])
+                    if binding['network_id'] == network_id:
+                        LOG.info("port [%s] already has binding, done"
+                                 % interface_name)
+                        return
+                    else:
+                        raise BadRequestException(
+                            msg="interface [%s] has binding to [%s],"
+                            "can not binding again"
+                            % (interface_name, binding['network_id']))
+
+                except NotFoundException:
+                    # not found is expected
+                    pass
+
             try:
                 self._call_client(self.client.create_port_binding, **arg)
             except BadRequestException:

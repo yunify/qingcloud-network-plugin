@@ -23,7 +23,6 @@ class TerraTestCases(unittest.TestCase):
     def tearDown(self):
         self.m.UnsetStubs()
 
-
     def get_driver(self):
 
         cfg.CONF(["--config-file",
@@ -85,7 +84,6 @@ class TerraTestCases(unittest.TestCase):
 # 
 #         driver.delete_vpc(vpc_id, user_id)
 
-
         driver.create_vpc(vpc_id, l3vni, user_id,
                           bgp_peers=bgp_peers)
 
@@ -109,7 +107,6 @@ class TerraTestCases(unittest.TestCase):
         driver.create_vxnet(vxnet_id, l2vni, ip_network, gateway_ip, user_id,
                             network_type='vxlan', enable_dhcp=True)
         driver.join_vpc(vpc_id, vxnet_id, user_id)
-
 
     def test_host(self):
 
