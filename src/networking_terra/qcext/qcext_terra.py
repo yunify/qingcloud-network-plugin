@@ -1,3 +1,5 @@
+from time import sleep
+from networking_terra.common.exceptions import BadRequestException
 from oslo_log import log as logging
 from networking_terra.common.client import TerraRestClient
 from common.qcext_api import QcExtBaseDriver
@@ -62,14 +64,28 @@ class TerraQcExtDriver(QcExtBaseDriver):
             "ip_address": ip_address,
             "advertise_host_route": False
         }
-        return self.client._post(self.client.url +
-                                 "routers/%s/bgp_neighbors" % vpc_id,
-                                 payload)
+        try:
+            return self.client._post(self.client.url +
+                                     "routers/%s/bgp_neighbors" % vpc_id,
+                                     payload)
+        except BadRequestException:
+            # failed in vpc consistent checking to avoid error from
+            # cisco. Try again later
+            sleep(60)
+            return self.client._post(self.client.url +
+                                     "routers/%s/bgp_neighbors" % vpc_id,
+                                     payload)
 
     def delete_router_bgp_peers(self, vpc_id):
         bgp_peers = self.client.get_router_bgp_peers(vpc_id)
         for peer in bgp_peers:
-            self.client.delete_router_bgp_peer(vpc_id, peer['id'])
+            try:
+                self.client.delete_router_bgp_peer(vpc_id, peer['id'])
+            except BadRequestException:
+                # failed in vpc consistent checking to avoid error from
+                # cisco. Try again later
+                sleep(60)
+                self.client.delete_router_bgp_peer(vpc_id, peer['id'])
 
     def create_direct_port(self, vxnet_id,
                            switch_name, interface_name,
