@@ -1,6 +1,7 @@
 from oslo_log import log as logging
 from networking_terra.common.client import TerraRestClient
 from common.qcext_api import QcExtBaseDriver
+from networking_terra.common.exceptions import NotFoundException
 
 LOG = logging.getLogger(__name__)
 
@@ -67,9 +68,12 @@ class TerraQcExtDriver(QcExtBaseDriver):
                                  payload)
 
     def delete_router_bgp_peers(self, vpc_id):
-        bgp_peers = self.client.get_router_bgp_peers(vpc_id)
-        for peer in bgp_peers:
-            self.client.delete_router_bgp_peer(vpc_id, peer['id'])
+        try:
+            bgp_peers = self.client.get_router_bgp_peers(vpc_id)
+            for peer in bgp_peers:
+                self.client.delete_router_bgp_peer(vpc_id, peer['id'])
+        except NotFoundException:
+            pass
 
     def create_direct_port(self, vxnet_id,
                            switch_name, interface_name,
