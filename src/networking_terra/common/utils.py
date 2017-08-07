@@ -98,7 +98,12 @@ def dict_compare(origin, current):
 
 def call_client(method, *args, **kwargs):
 
-    retry_badreq = kwargs.get("retry_badreq", 0)
+    retry_badreq = kwargs.get("retry_badreq", None)
+    if retry_badreq is not None:
+        del kwargs["retry_badreq"]
+    else:
+        retry_badreq = 0
+
     while True:
         ret = None
         try:
