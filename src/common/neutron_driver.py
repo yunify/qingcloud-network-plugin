@@ -70,7 +70,7 @@ class NeutronDriver(object):
         self.ml2 = ml2
         self.qcext = qcext
 
-    def create_vpc(self, vpc_id, l3vni, user_id, bgp_peers=None):
+    def create_vpc(self, vpc_id, l3vni, user_id):
         '''
         vpc is a VRF with l3vni used by evpn
         '''
@@ -84,19 +84,10 @@ class NeutronDriver(object):
 
         self.l3.create_router(router_context, vpc_id)
 
-        if bgp_peers:
-            for bgp_peer in bgp_peers:
-                as_number = bgp_peer.as_number
-                device_name = bgp_peer.device_name
-                ip_address = bgp_peer.ip_address
-                self.qcext.add_router_bgp_peer(vpc_id, as_number,
-                                               ip_address, device_name)
-
     def delete_vpc(self, vpc_id, user_id):
 
         router_context = L3Context({"tenant": user_id,
                                     "id": vpc_id})
-        self.qcext.delete_router_bgp_peers(vpc_id)
 
         self.l3.delete_router(router_context, vpc_id)
 
@@ -240,7 +231,13 @@ class NeutronDriver(object):
 
     def create_host(self, hostname, mgmt_ip, connections):
         return self.qcext.create_host(hostname, mgmt_ip,
-                                            connections)
+                                      connections)
+
+    def add_route(self, vpc_id, destination, nexthop, device_name):
+        return self.qcext.add_route(vpc_id, destination, nexthop, device_name)
+
+    def delete_routes(self, vpc_id, destination=None):
+        return self.qcext.delete_routes(vpc_id, destination=destination)
 
     def get_host(self, hostname):
 

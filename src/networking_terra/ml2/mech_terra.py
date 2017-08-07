@@ -24,13 +24,10 @@ from neutron.plugins.ml2.common import exceptions as ml2_exc
 
 from networking_terra.common.client import TerraRestClient
 from networking_terra.common.constants import *
-from networking_terra.common.utils import log_context
+from networking_terra.common.utils import log_context, call_client
 from networking_terra.common.utils import dict_compare
 from networking_terra.common.exceptions import NotFoundException,\
     BadRequestException
-from neutron.plugins.ml2.common.exceptions import MechanismDriverError
-import traceback
-from time import sleep
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('ml2_terra', 'networking_terra.common.config')
@@ -47,7 +44,7 @@ class TerraMechanismDriver(api.MechanismDriver):
         self.complete_binding = cfg.CONF.ml2_terra.complete_binding
         self.binding_level = cfg.CONF.ml2_terra.binding_level
         self.l2_vni_pool = cfg.CONF.ml2_terra.l2_vni_pool_name
-
+        self._call_client = call_client
         LOG.info("TerraMechanismDriver initialized")
 
     @log_context()
@@ -63,14 +60,6 @@ class TerraMechanismDriver(api.MechanismDriver):
         switch_name = link["switch_name"]
         switch_interface_name = link["switch_interface_name"]
         return switch_name, switch_interface_name
-
-    def _call_client(self, method, *args, **kwargs):
-        try:
-            return method(*args, **kwargs)
-        except Exception as e:
-            LOG.error(traceback.format_exc())
-            LOG.error("Failed to call method %s: %s" % (method.func_name, e.msg))
-            raise e
 
     @log_context(True)
     def create_network_postcommit(self, context):
@@ -212,13 +201,8 @@ class TerraMechanismDriver(api.MechanismDriver):
                     # not found is expected
                     pass
 
-            try:
-                self._call_client(self.client.create_port_binding, **arg)
-            except BadRequestException:
-                # failed in vpc consistent checking to avoid error from
-                # cisco. Try again later
-                sleep(60)
-                self._call_client(self.client.create_port_binding, **arg)
+            self._call_client(self.client.create_port_binding,
+                              retry_badreq=10, **arg)
 
     @log_context(True)
     def create_port_postcommit(self, context):
@@ -262,15 +246,14 @@ class TerraMechanismDriver(api.MechanismDriver):
                 switch_name, switch_interface_name = \
                     self.get_host_switch_connection(context.host)
                 network_id = context.network.current['id']
-                try:
-                    self.client.delete_port_binding(network_id, switch_name,
-                                                    switch_interface_name)
-                except BadRequestException:
-                    # failed in vpc consistent checking to avoid error from
-                    # cisco. Try again later
-                    sleep(60)
-                    self.client.delete_port_binding(network_id, switch_name,
-                                                    switch_interface_name)
+                args = {
+                    'network_id': network_id,
+                    'switch_name': switch_name,
+                    'switch_interface_name': switch_interface_name,
+                }
+                LOG.debug("delete_port_binding: %s" % args)
+                self._call_client(self.client.delete_port_binding,
+                                  retry_badreq=10, **args)
             except NotFoundException:
                 LOG.info("port binding not found for host [%s] in net [%s]"
                          % (context.host, network_id))

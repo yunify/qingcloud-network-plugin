@@ -67,25 +67,23 @@ class TerraTestCases(unittest.TestCase):
                      BgpPeer("169.254.2.2", 65535, "Border-Leaf-92160.02")]
 
         driver = self.get_driver()
-# 
-# 
-#         driver.leave_vpc(vpc_id, vxnet_id, user_id)
-# 
-#         driver.delete_vxnet(vxnet_id, user_id)
-# 
-#         for bgp_peer in bgp_peers:
-#             switch_name = bgp_peer.device_name
-#             bgp_subnet = bgp_subnet_map[switch_name]
-#             _network_id = bgp_subnet["network_id"]
-# 
-#             driver.delete_subintf(vpc_id, _network_id)
-# 
-#             driver.delete_vxnet(_network_id, user_id)
-# 
-#         driver.delete_vpc(vpc_id, user_id)
 
-        driver.create_vpc(vpc_id, l3vni, user_id,
-                          bgp_peers=bgp_peers)
+        driver.leave_vpc(vpc_id, vxnet_id, user_id)
+
+        driver.delete_vxnet(vxnet_id, user_id)
+
+        for bgp_peer in bgp_peers:
+            switch_name = bgp_peer.device_name
+            bgp_subnet = bgp_subnet_map[switch_name]
+            _network_id = bgp_subnet["network_id"]
+
+            driver.delete_subintf(vpc_id, _network_id)
+
+            driver.delete_vxnet(_network_id, user_id)
+
+        driver.delete_vpc(vpc_id, user_id)
+
+        driver.create_vpc(vpc_id, l3vni, user_id)
 
         for bgp_peer in bgp_peers:
             switch_name = bgp_peer.device_name
@@ -104,13 +102,19 @@ class TerraTestCases(unittest.TestCase):
                                _interface_name, vlan_id,
                                user_id)
 
+            device_name = bgp_peer.device_name
+            ip_address = bgp_peer.ip_address
+            driver.add_route(vpc_id, "0.0.0.0/0", ip_address,
+                             device_name)
+
         driver.create_vxnet(vxnet_id, l2vni, ip_network, gateway_ip, user_id,
                             network_type='vxlan', enable_dhcp=True)
         driver.join_vpc(vpc_id, vxnet_id, user_id)
 
     def test_host(self):
 
-        connections = [{
+        connections = [
+                       {
                          "host_name": "tr02n16",
                          "host_interface_name": "bond0",
                          "switch_name": "vpc2",
@@ -186,6 +190,8 @@ class TerraTestCases(unittest.TestCase):
         connections = [conn]
 
         driver = self.get_driver()
+#         driver.delete_host(hostname)
+
         driver.create_host(hostname, "", connections)
 
         ret = driver.get_host(hostname)

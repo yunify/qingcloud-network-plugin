@@ -37,18 +37,29 @@ class QcExtBaseDriver(object):
         pass
 
     @abc.abstractmethod
-    def add_router_bgp_peer(self, vpc_id, as_number, ip_address,
-                            device_name):
+    def get_routes(self, vpc_id):
+        '''
+        @param vpc_id: vpc to get static routes
+        '''
+        pass
+
+    @abc.abstractmethod
+    def add_route(self, vpc_id, destination, nexthop, device_name):
+
         '''
         @param vpc_id
-        @param as_number: bgp as number
-        @param ip_address: ip addr in bgp interface
+        @param destination: ip network, eg: 0.0.0.0
+        @param nexthop: gateway ip addr
         @param device_name: border device name to set bgp peer
         '''
         pass
 
     @abc.abstractmethod
-    def delete_router_bgp_peers(self, vpc_id):
+    def delete_routes(self, vpc_id, destination=None):
+        '''
+        @param vpc_id: vpc to delete routes
+        @param destination: destination route to delete. None to delete all
+        '''
         pass
 
     @abc.abstractmethod

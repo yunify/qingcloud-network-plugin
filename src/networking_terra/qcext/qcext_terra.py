@@ -4,6 +4,7 @@ from oslo_log import log as logging
 from networking_terra.common.client import TerraRestClient
 from common.qcext_api import QcExtBaseDriver
 from networking_terra.common.exceptions import NotFoundException
+from networking_terra.common.utils import call_client
 
 LOG = logging.getLogger(__name__)
 
@@ -12,14 +13,7 @@ class TerraQcExtDriver(QcExtBaseDriver):
     def __init__(self):
         LOG.info("initializing TerraQcExtDriver")
         self.client = TerraRestClient.create_client()
-
-    def _call_client(self, method, *args, **kwargs):
-        try:
-            return method(*args, **kwargs)
-        except Exception as e:
-            LOG.exception("Failed to call method %s: %s"
-                          % (method.func_name, e))
-            raise e
+        self._call_client = call_client
 
     def get_host(self, host):
         _host = self._call_client(self.client.get_host_by_name, host)
@@ -55,46 +49,42 @@ class TerraQcExtDriver(QcExtBaseDriver):
                                   hostname=host, mgmt_ip=mgmt_ip)
         _links = self._call_client(self.client.add_host_links, links=connections)
 
-    def add_router_bgp_peer(self, vpc_id, as_number, ip_address,
-                            device_name):
+    def add_route(self, vpc_id, destination, nexthop, device_name):
         vpc_id = self.client.get_id_by_original_id("routers", vpc_id)
         switch = self.client.get_switch(device_name)
         payload = {
             "device_id": switch["id"],
-            "as_number": as_number,
-            "ip_address": ip_address,
-            "advertise_host_route": False
+            "destination": destination,
+            "nexthop": nexthop,
         }
-        try:
-            return self.client._post(self.client.url +
-                                     "routers/%s/bgp_neighbors" % vpc_id,
-                                     payload)
-        except BadRequestException:
-            # failed in vpc consistent checking to avoid error from
-            # cisco. Try again later
-            sleep(60)
-            return self.client._post(self.client.url +
-                                     "routers/%s/bgp_neighbors" % vpc_id,
-                                     payload)
+        url = self.client.url + "routers/%s/routes" % vpc_id
+        self._call_client(self.client._post, url=url, payload=payload,
+                          retry_badreq=10)
 
-    def delete_router_bgp_peers(self, vpc_id):
-        bgp_peers = None
+    def get_routes(self, vpc_id):
+        _vpc_id = self.client.get_id_by_original_id("routers", vpc_id)
+        url = self.client.url + "routers/%s/routes" % _vpc_id
         try:
-            bgp_peers = self.client.get_router_bgp_peers(vpc_id)
+            return self._call_client(self.client._get, url=url)
         except NotFoundException:
-            return
+            LOG.info("no route in router [%s]" % vpc_id)
+            return None
 
-        if not bgp_peers:
+    def delete_routes(self, vpc_id, destination=None):
+        '''
+        @param vpc_id: vpc to delete routes
+        @param destination: destination route to delete. None to delete all
+        '''
+        _vpc_id = self.client.get_id_by_original_id("routers", vpc_id)
+        routes = self.get_route(vpc_id)
+        if not routes:
             return
-
-        for peer in bgp_peers:
-            try:
-                self.client.delete_router_bgp_peer(vpc_id, peer['id'])
-            except BadRequestException:
-                # failed in vpc consistent checking to avoid error from
-                # cisco. Try again later
-                sleep(60)
-                self.client.delete_router_bgp_peer(vpc_id, peer['id'])
+        for route in routes:
+            if not destination or route['destination'] == destination:
+                url = self.client.url + "routers/%s/routes/%s" \
+                      % (vpc_id, route['id'])
+                self._call_client(self.client._delete, url=url,
+                                  retry_badreq=10)
 
     def create_direct_port(self, vxnet_id,
                            switch_name, interface_name,

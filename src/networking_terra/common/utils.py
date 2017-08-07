@@ -19,6 +19,8 @@ from oslo_log import log as logging
 import json
 import os
 import pprint
+from networking_terra.common.exceptions import BadRequestException
+from time import sleep
 
 LOG = logging.getLogger(__name__)
 
@@ -94,3 +96,21 @@ def dict_compare(origin, current):
     return added, removed, modified, same
 
 
+def call_client(method, *args, **kwargs):
+
+    retry_badreq = kwargs.get("retry_badreq", 0)
+    while True:
+        ret = None
+        try:
+            ret = method(*args, **kwargs)
+        except BadRequestException as e:
+            if retry_badreq <= 0:
+                raise e
+            retry_badreq -= 1
+            sleep(60)
+            continue
+        except Exception as e:
+            LOG.exception("Failed to call method %s: %s"
+                          % (method.func_name, e))
+            raise e
+        return ret

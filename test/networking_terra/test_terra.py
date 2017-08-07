@@ -6,7 +6,7 @@ from networking_terra.ml2.mech_terra import TerraMechanismDriver
 from oslo_config import cfg
 from networking_terra.l3.terra_l3 import TerraL3RouterPlugin
 from oslo_log import log as logging
-from common.neutron_driver import NeutronDriver
+from common.neutron_driver import NeutronDriver, BgpPeer
 from networking_terra.qcext.qcext_terra import TerraQcExtDriver
 
 
@@ -25,7 +25,7 @@ class TerraNetTestCases(unittest.TestCase):
     def get_driver(self):
 
         cfg.CONF(["--config-file",
-                  "/etc/ml2_conf_terra_office.ini"])
+                  "/etc/ml2_conf_terra.ini"])
 
         l3 = TerraL3RouterPlugin()
         ml2 = TerraMechanismDriver()
@@ -44,11 +44,19 @@ class TerraNetTestCases(unittest.TestCase):
         user_id = 'usr-123456'
         ip_network = '192.168.0.0/24'
         gateway_ip = '192.168.0.1'
-        host = 'compute2'
+        host = 'tr02n34'
+
+        bgp_peers = []
+        bgp_peers.append(BgpPeer("169.254.2.2",
+                                 "65101",
+                                 "Border-Leaf-92160.02"))
+        bgp_peers.append(BgpPeer("169.254.1.2",
+                                 "65101",
+                                 "Border-Leaf-92160.01"))
 
         driver = self.get_driver()
 
-        driver.create_vpc(router_id, l3vni, user_id)
+        driver.create_vpc(router_id, l3vni, user_id, bgp_peers=bgp_peers)
 
         driver.create_vxnet(vxnet_id, l2vni, ip_network, gateway_ip, user_id)
 
