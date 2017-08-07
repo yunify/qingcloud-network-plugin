@@ -62,9 +62,9 @@ class TerraQcExtDriver(QcExtBaseDriver):
                           retry_badreq=10)
 
     def get_routes(self, vpc_id):
-        _vpc_id = self.client.get_id_by_original_id("routers", vpc_id)
-        url = self.client.url + "routers/%s/routes" % _vpc_id
         try:
+            _vpc_id = self.client.get_id_by_original_id("routers", vpc_id)
+            url = self.client.url + "routers/%s/routes" % _vpc_id
             return self._call_client(self.client._get, url=url)
         except NotFoundException:
             LOG.info("no route in router [%s]" % vpc_id)
@@ -75,16 +75,22 @@ class TerraQcExtDriver(QcExtBaseDriver):
         @param vpc_id: vpc to delete routes
         @param destination: destination route to delete. None to delete all
         '''
-        _vpc_id = self.client.get_id_by_original_id("routers", vpc_id)
-        routes = self.get_route(vpc_id)
-        if not routes:
-            return
-        for route in routes:
-            if not destination or route['destination'] == destination:
-                url = self.client.url + "routers/%s/routes/%s" \
-                      % (vpc_id, route['id'])
-                self._call_client(self.client._delete, url=url,
-                                  retry_badreq=10)
+        try:
+            routes = self.get_route(vpc_id)
+            if not routes:
+                return
+
+            _vpc_id = self.client.get_id_by_original_id("routers", vpc_id)
+
+            for route in routes:
+                if not destination or route['destination'] == destination:
+                    url = self.client.url + "routers/%s/routes/%s" \
+                          % (_vpc_id, route['id'])
+                    self._call_client(self.client._delete, url=url,
+                                      retry_badreq=10)
+        except NotFoundException:
+            LOG.info("no route in router [%s]" % vpc_id)
+            return None
 
     def create_direct_port(self, vxnet_id,
                            switch_name, interface_name,
