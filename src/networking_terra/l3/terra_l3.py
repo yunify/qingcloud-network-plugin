@@ -15,10 +15,9 @@
 from oslo_log import log as logging
 from networking_terra.common.client import TerraRestClient
 from networking_terra.common.exceptions import NotFoundException
-from networking_terra.common.utils import log_context
+from networking_terra.common.utils import log_context, call_client
 from neutron.extensions.l3 import RouterPluginBase
 from oslo_config import cfg
-import traceback
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group("ml2_terra", "networking_terra.common.config")
@@ -31,16 +30,8 @@ class TerraL3RouterPlugin(RouterPluginBase):
         super(TerraL3RouterPlugin, self).__init__()
         self.client = TerraRestClient.create_client()
         self.l3_vni_pool = cfg.CONF.ml2_terra.l3_vni_pool_name
+        self._call_client = call_client
         LOG.info("Terra L3 driver initialized")
-
-    def _call_client(self, method, *args, **kwargs):
-        try:
-            method(*args, **kwargs)
-        except Exception as e:
-            LOG.error("Failed to call method %s: %s"
-                      % (method.func_name, e))
-            LOG.error(traceback.format_exc())
-            raise e
 
     @log_context(True)
     def create_router(self, context, router):
@@ -89,7 +80,7 @@ class TerraL3RouterPlugin(RouterPluginBase):
         LOG.debug("add router interface: router_id: %s, subnet_id: %s, port_id: %s"
                   % (router_id, subnet_id, port_id))
         self._call_client(self.client.add_router_interface,
-                          router_id, subnet_id, port_id)
+                          router_id, subnet_id, port_id, retry_badreq=10)
 
         return router_interface_info
 
@@ -103,7 +94,8 @@ class TerraL3RouterPlugin(RouterPluginBase):
                   (router_id, subnet_id))
         try:
             self._call_client(self.client.del_router_interface,
-                              router_id, subnet_id, port_id)
+                              router_id, subnet_id, port_id,
+                              retry_badreq=10)
         except NotFoundException as e:
             LOG.info("don't find router %s or subnet %s in fc" % (router_id, subnet_id))
 

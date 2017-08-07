@@ -76,7 +76,7 @@ class TerraQcExtDriver(QcExtBaseDriver):
         @param destination: destination route to delete. None to delete all
         '''
         try:
-            routes = self.get_route(vpc_id)
+            routes = self.get_routes(vpc_id)
             if not routes:
                 return
 
