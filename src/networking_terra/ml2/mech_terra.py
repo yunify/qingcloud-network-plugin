@@ -243,13 +243,13 @@ class TerraMechanismDriver(api.MechanismDriver):
             return
         if context.host and context.current['device_id']:
             try:
-                switch_name, switch_interface_name = \
+                switch_name, interface_name = \
                     self.get_host_switch_connection(context.host)
                 network_id = context.network.current['id']
                 args = {
                     'network_id': network_id,
                     'switch_name': switch_name,
-                    'switch_interface_name': switch_interface_name,
+                    'interface_name': interface_name,
                 }
                 LOG.debug("delete_port_binding: %s" % args)
                 self._call_client(self.client.delete_port_binding,
