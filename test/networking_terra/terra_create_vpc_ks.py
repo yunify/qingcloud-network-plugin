@@ -58,7 +58,7 @@ class TerraTestCases(unittest.TestCase):
                                "interface_name": "Ethernet1/48",
                                }}
 
-        vlan_id = 511
+        vlan_id = 2
         user_id = 'yunify'
         ip_network = "172.31.21.0/24"
         gateway_ip = "172.31.21.1"
@@ -70,7 +70,6 @@ class TerraTestCases(unittest.TestCase):
 
         driver.leave_vpc(vpc_id, vxnet_id, user_id)
 
-        driver.delete_vxnet(vxnet_id, user_id)
 
         for bgp_peer in bgp_peers:
             switch_name = bgp_peer.device_name
@@ -80,6 +79,9 @@ class TerraTestCases(unittest.TestCase):
             driver.delete_subintf(vpc_id, _network_id)
 
             driver.delete_vxnet(_network_id, user_id)
+            driver.delete_routes(vpc_id)
+
+        driver.delete_vxnet(vxnet_id, user_id)
 
         driver.delete_vpc(vpc_id, user_id)
 
@@ -104,6 +106,8 @@ class TerraTestCases(unittest.TestCase):
 
             device_name = bgp_peer.device_name
             ip_address = bgp_peer.ip_address
+            driver.add_route(vpc_id, "172.31.0.0/16", ip_address,
+                             device_name)
             driver.add_route(vpc_id, "0.0.0.0/0", ip_address,
                              device_name)
 
@@ -115,70 +119,40 @@ class TerraTestCases(unittest.TestCase):
 
         connections = [
                        {
-                         "host_name": "tr02n16",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel105"
-                       },
-                       {
-                         "host_name": "tr03n01",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel104"
-                       },
-                       {
-                         "host_name": "tr03n30",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel103"
-                       },
-                       {
-                         "host_name": "tr02n17",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel106"
-                       },
-                       {
-                         "host_name": "tr02n30",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel120"
-                       },
-                       {
-                         "host_name": "tr02n29",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel119"
-                       },
-                       {
-                         "host_name": "tr02n54",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel121"
-                       },
-                       {
-                         "host_name": "tr02n25",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel113"
-                       },
-                       {
-                         "host_name": "tr02n32",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel114"
-                       },
-                       {
-                         "host_name": "tr02n33",
-                         "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel115"
-                       },
-                       {
                          "host_name": "tr02n34",
                          "host_interface_name": "bond0",
-                         "switch_name": "vpc2",
-                         "switch_interface_name": "port-channel116"
+                         "switch_name": "vpc1",
+                         "switch_interface_name": "port-channel107"
+                        },
+                        {
+                          "host_name": "tr02n17",
+                          "host_interface_name": "bond0",
+                          "switch_name": "vpc1",
+                          "switch_interface_name": "port-channel106"
+                        },
+                        {
+                          "host_name": "tr02n16",
+                          "host_interface_name": "bond0",
+                          "switch_name": "vpc1",
+                          "switch_interface_name": "port-channel105"
+                        },
+                        {
+                          "host_name": "tr03n01",
+                          "host_interface_name": "bond0",
+                          "switch_name": "vpc2",
+                          "switch_interface_name": "port-channel104"
+                        },
+                        {
+                          "host_name": "tr03n30",
+                          "host_interface_name": "bond0",
+                          "switch_name": "vpc2",
+                          "switch_interface_name": "port-channel103"
+                        },
+                        {
+                          "host_name": "tr02n30",
+                          "host_interface_name": "bond0",
+                          "switch_name": "vpc2",
+                          "switch_interface_name": "port-channel120"
                        }]
 
         for conn in connections:
